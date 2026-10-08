@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate
+    name: ${{ github.event_name == 'pull_request' && github.base_ref == 'production' && 'Validate production promotion' || 'Validate' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
