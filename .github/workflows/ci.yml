@@ -22,6 +22,18 @@ jobs:
       NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
+      - name: Enforce production PR source
+        if: github.event_name == 'pull_request' && github.base_ref == 'production'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REF" != "main" ] || [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then
+            echo "Only pull requests from this repository's main branch may target production."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v7
 
