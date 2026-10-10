@@ -17,20 +17,22 @@ function homeHref(slug: string | undefined): string {
 }
 
 function linkClass(selected: boolean): string {
+  const base = "block whitespace-nowrap rounded-full px-4 py-1.5 text-sm transition-colors";
   return selected
-    ? "rounded-full border border-foreground bg-foreground px-3 py-1 text-sm text-background"
-    : "rounded-full border border-foreground/30 px-3 py-1 text-sm";
+    ? `${base} bg-blue-500 font-semibold text-white shadow-sm`
+    : `${base} border border-black/10 bg-white text-foreground`;
 }
 
 // Plain links only: changing the filter re-renders the Server Component.
+// Pills scroll horizontally instead of wrapping when space is short.
 export function RetailerFilter({
   retailers,
   selectedSlug,
   hrefFor = homeHref,
 }: RetailerFilterProps) {
   return (
-    <nav aria-label="ショップで絞り込み">
-      <ul className="flex flex-wrap gap-2">
+    <nav aria-label="ショップで絞り込み" className="-mx-4 overflow-x-auto px-4">
+      <ul className="flex w-max gap-2">
         <li>
           <Link
             href={hrefFor(undefined)}

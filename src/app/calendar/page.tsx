@@ -3,15 +3,18 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { MonthGrid, type MonthGridEvent } from "@/components/MonthGrid";
 import { RetailerFilter } from "@/components/RetailerFilter";
-import { SaleList } from "@/components/SaleList";
+import { SaleList, type SaleListItem } from "@/components/SaleList";
 import { listActiveRetailers, type RetailerDto } from "@/server/data/retailers";
 import { listPublishedSaleEvents, type SaleEventDto } from "@/server/data/sale-events";
 import {
   assignEventsToDays,
   buildCalendarDays,
+  buildCalendarWeeks,
   calendarHref,
   calendarRange,
   filterMonthSales,
+  formatDayHeading,
+  resolveSelectedDay,
   resolveYearMonth,
   shiftMonth,
   type YearMonth,
@@ -24,7 +27,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
   await connection();
   const now = new Date();
 
-  const { year, month, retailer: requestedRetailer } = await searchParams;
+  const { year, month, day, retailer: requestedRetailer } = await searchParams;
   const yearMonth = resolveYearMonth(year, month, now);
 
   let retailers: RetailerDto[] | null = null;
@@ -46,18 +49,32 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 py-10">
-      <div className="flex items-baseline justify-between gap-4">
-        <h1 className="text-2xl font-semibold">セールカレンダー</h1>
-        <Link href="/" className="text-sm underline">
-          トップへ
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 pb-12 pt-4">
+      <header className="grid grid-cols-[1fr_auto_1fr] items-center">
+        <Link
+          href="/"
+          aria-label="ホームへ戻る"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-blue-500"
+        >
+          <ChevronIcon direction="left" />
         </Link>
-      </div>
+        <h1 className="text-[17px] font-semibold">カレンダー</h1>
+        <Link
+          href={calendarHref(null, selectedRetailerSlug)}
+          aria-label="今日を表示"
+          className="justify-self-end rounded-full border border-blue-500 px-3 py-1 text-sm font-medium text-blue-500"
+        >
+          今日
+        </Link>
+      </header>
       {retailers === null || sales === null ? (
-        <p>セール情報を読み込めませんでした</p>
+        <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm shadow-sm">
+          セール情報を読み込めませんでした
+        </p>
       ) : (
         <CalendarContent
           yearMonth={yearMonth}
+          dayParam={day}
           retailers={retailers}
           selectedRetailerSlug={selectedRetailerSlug}
           sales={sales}
@@ -70,62 +87,103 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
 
 type CalendarContentProps = {
   yearMonth: YearMonth;
+  dayParam: string | string[] | undefined;
   retailers: RetailerDto[];
   selectedRetailerSlug: string | undefined;
   sales: SaleEventDto[];
   now: Date;
 };
 
+function toListItem(sale: SaleEventDto, now: Date): SaleListItem {
+  return {
+    id: sale.id,
+    title: sale.title,
+    retailerSlug: sale.retailer.slug,
+    retailerName: sale.retailer.name,
+    period: formatSalePeriod(sale),
+    isActive: isSaleActive(sale, now),
+  };
+}
+
 function CalendarContent({
   yearMonth,
+  dayParam,
   retailers,
   selectedRetailerSlug,
   sales,
   now,
 }: CalendarContentProps) {
-  const gridEvents = sales.map((sale): MonthGridEvent & SaleTiming => ({
-    startsAt: sale.startsAt,
-    endsAt: sale.endsAt,
-    isDateOnly: sale.isDateOnly,
-    id: sale.id,
-    title: sale.title,
-    retailerName: sale.retailer.name,
-  }));
-  const cells = assignEventsToDays(buildCalendarDays(yearMonth, now), gridEvents);
-  const monthItems = filterMonthSales(sales, yearMonth).map((sale) => ({
-    id: sale.id,
-    title: sale.title,
-    retailerName: sale.retailer.name,
-    period: formatSalePeriod(sale),
-    isActive: isSaleActive(sale, now),
-  }));
+  const days = buildCalendarDays(yearMonth, now);
+  const selectedDay = resolveSelectedDay(dayParam, days);
+  const gridEvents = sales.map(
+    (sale): MonthGridEvent & SaleTiming & { sale: SaleEventDto } => ({
+      startsAt: sale.startsAt,
+      endsAt: sale.endsAt,
+      isDateOnly: sale.isDateOnly,
+      id: sale.id,
+      title: sale.title,
+      retailerSlug: sale.retailer.slug,
+      retailerName: sale.retailer.name,
+      sale,
+    }),
+  );
+  const weeks = buildCalendarWeeks(days, gridEvents);
+  const selectedEvents =
+    assignEventsToDays([selectedDay], gridEvents)[0]?.events.map((event) => event.sale) ?? [];
+  const monthItems = filterMonthSales(sales, yearMonth).map((sale) => toListItem(sale, now));
 
   return (
     <>
       <RetailerFilter
         retailers={retailers}
         selectedSlug={selectedRetailerSlug}
-        hrefFor={(slug) => calendarHref(yearMonth, slug)}
+        hrefFor={(slug) => calendarHref(yearMonth, slug, selectedDay.key)}
       />
-      <nav aria-label="月の切り替え" className="flex items-center justify-between gap-2">
-        <MonthLink target={shiftMonth(yearMonth, -1)} retailerSlug={selectedRetailerSlug}>
-          前の月
-        </MonthLink>
-        <div className="flex flex-col items-center">
-          <h2 className="text-lg font-medium">
+      <section
+        aria-label="月間カレンダー"
+        className="flex flex-col gap-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5"
+      >
+        <nav aria-label="月の切り替え" className="flex items-center justify-between px-1">
+          <MonthLink
+            target={shiftMonth(yearMonth, -1)}
+            retailerSlug={selectedRetailerSlug}
+            label="前の月"
+          >
+            <ChevronIcon direction="left" />
+          </MonthLink>
+          <h2 className="text-lg font-semibold">
             {yearMonth.year}年{yearMonth.month}月
           </h2>
-          <Link href={calendarHref(null, selectedRetailerSlug)} className="text-xs underline">
-            今月
-          </Link>
+          <MonthLink
+            target={shiftMonth(yearMonth, 1)}
+            retailerSlug={selectedRetailerSlug}
+            label="次の月"
+          >
+            <ChevronIcon direction="right" />
+          </MonthLink>
+        </nav>
+        <MonthGrid
+          weeks={weeks}
+          selectedKey={selectedDay.key}
+          dayHref={(dayKey) => calendarHref(yearMonth, selectedRetailerSlug, dayKey)}
+        />
+      </section>
+      <section aria-labelledby="selected-day-heading" className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between px-1">
+          <h2 id="selected-day-heading" className="text-xl font-bold">
+            {formatDayHeading(selectedDay)}
+          </h2>
+          <span className="text-sm text-foreground/60">{selectedEvents.length}件のセール</span>
         </div>
-        <MonthLink target={shiftMonth(yearMonth, 1)} retailerSlug={selectedRetailerSlug}>
-          次の月
-        </MonthLink>
-      </nav>
-      <MonthGrid cells={cells} />
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">この月のセール</h2>
+        <SaleList
+          items={selectedEvents.map((sale) => toListItem(sale, now))}
+          emptyText="この日のセールはありません"
+        />
+      </section>
+      <section aria-labelledby="month-sales-heading" className="mt-2 flex flex-col gap-2">
+        <h2 id="month-sales-heading" className="px-1 text-sm font-semibold text-foreground/60">
+          この月のセール
+        </h2>
         <SaleList items={monthItems} emptyText="この月のセールはありません" />
       </section>
     </>
@@ -135,19 +193,46 @@ function CalendarContent({
 function MonthLink({
   target,
   retailerSlug,
+  label,
   children,
 }: {
   target: YearMonth | null;
   retailerSlug: string | undefined;
+  label: string;
   children: ReactNode;
 }) {
-  const className = "rounded-full border border-foreground/30 px-3 py-1 text-sm";
+  const className = "flex h-9 w-9 items-center justify-center rounded-full";
   if (target === null) {
-    return <span className={`${className} opacity-40`}>{children}</span>;
+    return (
+      <span aria-label={label} aria-disabled="true" className={`${className} text-slate-300`}>
+        {children}
+      </span>
+    );
   }
   return (
-    <Link href={calendarHref(target, retailerSlug)} className={className}>
+    <Link
+      href={calendarHref(target, retailerSlug)}
+      aria-label={label}
+      className={`${className} text-blue-500 active:bg-blue-50`}
+    >
       {children}
     </Link>
+  );
+}
+
+function ChevronIcon({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={direction === "left" ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} />
+    </svg>
   );
 }

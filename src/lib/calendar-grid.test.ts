@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   assignEventsToDays,
   buildCalendarDays,
+  buildCalendarWeeks,
   CALENDAR_DAYS,
   calendarHref,
   calendarRange,
   filterMonthSales,
+  formatDayHeading,
   gridStart,
   monthStart,
   nextMonthStart,
+  resolveSelectedDay,
   resolveYearMonth,
   shiftMonth,
   splitVisibleEvents,
@@ -261,5 +264,183 @@ describe("calendarHref", () => {
     expect(calendarHref(OCT_2026, "amazon")).toBe("/calendar?year=2026&month=10&retailer=amazon");
     expect(calendarHref(null)).toBe("/calendar");
     expect(calendarHref(null, "rakuten")).toBe("/calendar?retailer=rakuten");
+  });
+
+  it("adds the selected day before the retailer", () => {
+    expect(calendarHref(OCT_2026, "amazon", "2026-10-15")).toBe(
+      "/calendar?year=2026&month=10&day=2026-10-15&retailer=amazon",
+    );
+    expect(calendarHref(OCT_2026, undefined, "2026-10-15")).toBe(
+      "/calendar?year=2026&month=10&day=2026-10-15",
+    );
+    // "Today" links never carry a day.
+    expect(calendarHref(null, undefined, "2026-10-15")).toBe("/calendar");
+  });
+});
+
+describe("resolveSelectedDay", () => {
+  const october = buildCalendarDays(OCT_2026, NOW);
+
+  it("uses a valid day inside the grid, including outside-month days", () => {
+    expect(resolveSelectedDay("2026-10-15", october).key).toBe("2026-10-15");
+    expect(resolveSelectedDay("2026-11-07", october).key).toBe("2026-11-07");
+  });
+
+  it.each([
+    ["malformed", "2026-10-5"],
+    ["outside the grid", "2026-11-08"],
+    ["impossible date", "2026-02-30"],
+    ["repeated", ["2026-10-15", "2026-10-16"]],
+    ["missing", undefined],
+  ])("falls back to JST today when today is in the grid (%s)", (_label, day) => {
+    expect(resolveSelectedDay(day, october).key).toBe("2026-10-10");
+  });
+
+  it("falls back to the 1st of the month when today is not in the grid", () => {
+    const december = buildCalendarDays({ year: 2026, month: 12 }, NOW);
+    expect(resolveSelectedDay("bad", december).key).toBe("2026-12-01");
+    expect(resolveSelectedDay(undefined, december).key).toBe("2026-12-01");
+  });
+
+  it("uses JST today even when it is a neighbouring-month day in the grid", () => {
+    // The December 2026 grid starts on Sunday 2026-11-29.
+    const december = buildCalendarDays(
+      { year: 2026, month: 12 },
+      new Date("2026-11-29T03:00:00Z"), // 2026-11-29 12:00 JST
+    );
+    expect(december[0].key).toBe("2026-11-29");
+    expect(december[0].inMonth).toBe(false);
+    expect(resolveSelectedDay(undefined, december).key).toBe("2026-11-29");
+  });
+});
+
+describe("formatDayHeading", () => {
+  it("formats month, day and weekday", () => {
+    const days = buildCalendarDays(OCT_2026, NOW);
+    expect(formatDayHeading(days.find((d) => d.key === "2026-10-15")!)).toBe("10月15日(木)");
+    expect(formatDayHeading(days[0])).toBe("9月27日(日)");
+  });
+});
+
+describe("buildCalendarWeeks", () => {
+  const days = buildCalendarDays(OCT_2026, NOW);
+
+  function bars(weeks: ReturnType<typeof buildCalendarWeeks<ReturnType<typeof sale>>>) {
+    return weeks.flatMap((week, row) =>
+      week.segments.map((segment) => ({
+        id: segment.event.id,
+        row,
+        startColumn: segment.startColumn,
+        span: segment.span,
+        lane: segment.lane,
+        continuesBefore: segment.continuesBefore,
+        continuesAfter: segment.continuesAfter,
+      })),
+    );
+  }
+
+  it("has six weeks of seven days", () => {
+    const weeks = buildCalendarWeeks(days, []);
+    expect(weeks).toHaveLength(6);
+    expect(weeks.every((week) => week.days.length === 7 && week.days[0].weekday === 0)).toBe(true);
+    expect(weeks.every((week) => week.hiddenCounts.every((count) => count === 0))).toBe(true);
+  });
+
+  it("draws a multi-day sale as one bar inside a week", () => {
+    // 2026-10-13 (Tue) to 2026-10-15 (Thu), date-only.
+    const weeks = buildCalendarWeeks(days, [
+      sale("m", "2026-10-12T15:00:00Z", "2026-10-15T15:00:00Z", true),
+    ]);
+    expect(bars(weeks)).toEqual([
+      { id: "m", row: 2, startColumn: 2, span: 3, lane: 0, continuesBefore: false, continuesAfter: false },
+    ]);
+  });
+
+  it("splits a sale at week boundaries", () => {
+    // 2026-10-09 (Fri) to 2026-10-20 (Tue), date-only: three week rows.
+    const weeks = buildCalendarWeeks(days, [
+      sale("w", "2026-10-08T15:00:00Z", "2026-10-20T15:00:00Z", true),
+    ]);
+    expect(bars(weeks)).toEqual([
+      { id: "w", row: 1, startColumn: 5, span: 2, lane: 0, continuesBefore: false, continuesAfter: true },
+      { id: "w", row: 2, startColumn: 0, span: 7, lane: 0, continuesBefore: true, continuesAfter: true },
+      { id: "w", row: 3, startColumn: 0, span: 3, lane: 0, continuesBefore: true, continuesAfter: false },
+    ]);
+  });
+
+  it("keeps a bar continuous across a month boundary inside a week", () => {
+    // 2026-09-29 (Tue) to 2026-10-02 (Fri), date-only.
+    const weeks = buildCalendarWeeks(days, [
+      sale("b", "2026-09-28T15:00:00Z", "2026-10-02T15:00:00Z", true),
+    ]);
+    expect(bars(weeks)).toEqual([
+      { id: "b", row: 0, startColumn: 2, span: 4, lane: 0, continuesBefore: false, continuesAfter: false },
+    ]);
+  });
+
+  it("clips bars at the grid edges and marks the continuation", () => {
+    // 2026-09-20 to 2026-11-10 JST covers the whole grid.
+    const weeks = buildCalendarWeeks(days, [
+      sale("long", "2026-09-19T15:00:00Z", "2026-11-09T15:00:00Z", true),
+    ]);
+    const result = bars(weeks);
+    expect(result).toHaveLength(6);
+    expect(result[0]).toMatchObject({ startColumn: 0, span: 7, continuesBefore: true });
+    expect(result[5]).toMatchObject({ startColumn: 0, span: 7, continuesAfter: true });
+  });
+
+  it("respects the exclusive end at a week boundary", () => {
+    // Ends exactly at 2026-10-18 00:00 JST (Sunday): stays in the first row.
+    const weeks = buildCalendarWeeks(days, [
+      sale("x", "2026-10-15T15:00:00Z", "2026-10-17T15:00:00Z", true),
+    ]);
+    expect(bars(weeks)).toEqual([
+      { id: "x", row: 2, startColumn: 5, span: 2, lane: 0, continuesBefore: false, continuesAfter: false },
+    ]);
+  });
+
+  it("packs non-overlapping bars into the same lane", () => {
+    const weeks = buildCalendarWeeks(days, [
+      sale("a", "2026-10-10T15:00:00Z", "2026-10-12T15:00:00Z", true), // Sun-Mon
+      sale("c", "2026-10-12T15:00:00Z", "2026-10-14T15:00:00Z", true), // Tue-Wed
+      sale("d", "2026-10-11T15:00:00Z", "2026-10-13T15:00:00Z", true), // Mon-Tue
+    ]);
+    expect(bars(weeks).map(({ id, lane }) => ({ id, lane }))).toEqual([
+      { id: "a", lane: 0 },
+      { id: "d", lane: 1 },
+      { id: "c", lane: 0 },
+    ]);
+  });
+
+  it("uses at most two lanes and counts hidden sales per day", () => {
+    const weeks = buildCalendarWeeks(days, [
+      sale("1", "2026-10-11T15:00:00Z", "2026-10-14T15:00:00Z", true), // Mon-Wed
+      sale("2", "2026-10-12T15:00:00Z", "2026-10-13T15:00:00Z", true), // Tue
+      sale("3", "2026-10-12T15:00:00Z", "2026-10-14T15:00:00Z", true), // Tue-Wed
+      sale("4", "2026-10-12T15:00:00Z", "2026-10-13T15:00:00Z", true), // Tue
+    ]);
+    const week = weeks[2];
+    expect(week.segments.map((s) => s.event.id)).toEqual(["1", "3"]);
+    expect(week.segments.every((s) => s.lane < 2)).toBe(true);
+    expect(week.hiddenCounts).toEqual([0, 0, 2, 0, 0, 0, 0]);
+  });
+
+  it("matches the per-day assignment", () => {
+    const sales = [
+      sale("p", "2026-10-04T11:00:00Z", "2026-10-06T17:00:00Z"),
+      sale("q", "2026-10-31T15:00:00Z", "2026-11-03T15:00:00Z", true),
+    ];
+    const weeks = buildCalendarWeeks(days, sales, 10);
+    const fromBars = weeks.flatMap((week) =>
+      week.segments.flatMap((segment) =>
+        week.days
+          .slice(segment.startColumn, segment.startColumn + segment.span)
+          .map((day) => `${segment.event.id}:${day.key}`),
+      ),
+    );
+    const fromDays = assignEventsToDays(days, sales).flatMap((cell) =>
+      cell.events.map((event) => `${event.id}:${cell.key}`),
+    );
+    expect([...fromBars].sort()).toEqual([...fromDays].sort());
   });
 });

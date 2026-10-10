@@ -74,10 +74,31 @@ async function renderCalendar(params: Params = {}) {
   return renderToStaticMarkup(await CalendarPage(calendarProps(params)));
 }
 
+// The <a> element for one day cell.
 function cellHtml(html: string, dateKey: string): string {
-  const start = html.indexOf(`data-date="${dateKey}"`);
-  expect(start).toBeGreaterThan(-1);
-  return html.slice(start, html.indexOf("</li>", start));
+  const marker = html.indexOf(`data-date="${dateKey}"`);
+  expect(marker).toBeGreaterThan(-1);
+  return html.slice(html.lastIndexOf("<a", marker), html.indexOf("</a>", marker));
+}
+
+type Segment = { id: string; startColumn: number; span: number; lane: number };
+
+function segments(html: string): Segment[] {
+  return [
+    ...html.matchAll(
+      /data-sale-id="([^"]+)" data-start-column="(\d)" data-span="(\d)" data-lane="(\d)"/g,
+    ),
+  ].map(([, id, startColumn, span, lane]) => ({
+    id,
+    startColumn: Number(startColumn),
+    span: Number(span),
+    lane: Number(lane),
+  }));
+}
+
+function selectedSection(html: string): string {
+  const start = html.indexOf('id="selected-day-heading"');
+  return html.slice(start, html.indexOf('id="month-sales-heading"'));
 }
 
 beforeEach(() => {
@@ -178,6 +199,16 @@ describe("CalendarPage", () => {
     );
   });
 
+  it("renders the app header with back and today links", async () => {
+    const html = await renderCalendar({ retailer: "amazon" });
+
+    expect(html).toContain(">カレンダー</h1>");
+    expect(html).toContain('aria-label="ホームへ戻る"');
+    expect(html).toContain('href="/"');
+    expect(html).toContain('aria-label="今日を表示"');
+    expect(html).toContain('href="/calendar?retailer=amazon"');
+  });
+
   it("renders weekday headers and a 42-day grid with month and today markers", async () => {
     const html = await renderCalendar();
 
@@ -191,13 +222,15 @@ describe("CalendarPage", () => {
     expect(html).toContain('data-date="2026-11-07" data-in-month="false"');
     expect(html.match(/aria-current="date"/g)).toHaveLength(1);
     expect(cellHtml(html, "2026-10-10")).toContain('aria-current="date"');
+    expect(cellHtml(html, "2026-10-10")).toContain("今日");
   });
 
-  it("links month navigation, keeping the selected retailer", async () => {
+  it("links month navigation with labels, keeping the selected retailer", async () => {
     const all = await renderCalendar({ year: "2026", month: "1" });
+    expect(all).toContain('aria-label="前の月"');
+    expect(all).toContain('aria-label="次の月"');
     expect(all).toContain('href="/calendar?year=2025&amp;month=12"');
     expect(all).toContain('href="/calendar?year=2026&amp;month=2"');
-    expect(all).toContain('href="/calendar"');
 
     const filtered = await renderCalendar({ year: "2026", month: "12", retailer: "amazon" });
     expect(filtered).toContain('href="/calendar?year=2026&amp;month=11&amp;retailer=amazon"');
@@ -205,32 +238,123 @@ describe("CalendarPage", () => {
     expect(filtered).toContain('href="/calendar?retailer=amazon"');
   });
 
-  it("keeps the month in retailer filter links", async () => {
-    const html = await renderCalendar({ year: "2026", month: "11" });
+  it("keeps the month and selected day in retailer filter links", async () => {
+    const html = await renderCalendar({ year: "2026", month: "11", day: "2026-11-20" });
 
-    expect(html).toContain('href="/calendar?year=2026&amp;month=11"');
-    expect(html).toContain('href="/calendar?year=2026&amp;month=11&amp;retailer=rakuten"');
-    expect(html).toContain('href="/calendar?year=2026&amp;month=11&amp;retailer=amazon"');
+    expect(html).toContain('href="/calendar?year=2026&amp;month=11&amp;day=2026-11-20"');
+    expect(html).toContain(
+      'href="/calendar?year=2026&amp;month=11&amp;day=2026-11-20&amp;retailer=rakuten"',
+    );
+    expect(html).toContain(
+      'href="/calendar?year=2026&amp;month=11&amp;day=2026-11-20&amp;retailer=amazon"',
+    );
   });
 
-  it("places events on each overlapped day and lists only this month's sales", async () => {
+  it("links each day to itself, keeping year, month and retailer", async () => {
+    const html = await renderCalendar({ year: "2026", month: "10", retailer: "amazon" });
+
+    expect(cellHtml(html, "2026-10-15")).toContain(
+      'href="/calendar?year=2026&amp;month=10&amp;day=2026-10-15&amp;retailer=amazon"',
+    );
+    // Outside-month days stay on the displayed month.
+    expect(cellHtml(html, "2026-09-27")).toContain(
+      'href="/calendar?year=2026&amp;month=10&amp;day=2026-09-27&amp;retailer=amazon"',
+    );
+  });
+
+  it("selects a valid requested day", async () => {
+    const html = await renderCalendar({ year: "2026", month: "10", day: "2026-10-15" });
+
+    expect(cellHtml(html, "2026-10-15")).toContain('data-selected="true"');
+    expect(cellHtml(html, "2026-10-10")).toContain('data-selected="false"');
+    expect(html.match(/data-selected="true"/g)).toHaveLength(1);
+    expect(selectedSection(html)).toContain("10月15日(木)");
+  });
+
+  it.each([
+    ["malformed", "2026-10-5"],
+    ["outside the grid", "2026-12-01"],
+    ["not a date", "today"],
+    ["repeated", ["2026-10-15", "2026-10-16"]],
+  ])("falls back to today for a %s day when today is in the grid", async (_label, day) => {
+    const html = await renderCalendar({ year: "2026", month: "10", day });
+
+    expect(cellHtml(html, "2026-10-10")).toContain('data-selected="true"');
+    expect(selectedSection(html)).toContain("10月10日(土)");
+  });
+
+  it("defaults to the 1st of the month when today is outside the grid", async () => {
+    const html = await renderCalendar({ year: "2026", month: "12" });
+
+    expect(cellHtml(html, "2026-12-01")).toContain('data-selected="true"');
+    expect(selectedSection(html)).toContain("12月1日(火)");
+  });
+
+  it("lists the selected day's sales with detail links", async () => {
+    listPublishedSaleEvents.mockResolvedValue([OCTOBER_SALE, SEPTEMBER_GRID_SALE]);
+
+    const html = await renderCalendar({ year: "2026", month: "10", day: "2026-10-16" });
+    const section = selectedSection(html);
+
+    expect(section).toContain("1件のセール");
+    expect(section).toContain("十月セール");
+    expect(section).toContain(`href="/sales/${OCTOBER_SALE.id}"`);
+    expect(section).toContain("楽天市場");
+    expect(section).toContain("10/15(木) 〜 10/16(金)");
+    expect(section).not.toContain("九月末セール");
+  });
+
+  it("shows an empty selected day", async () => {
+    listPublishedSaleEvents.mockResolvedValue([OCTOBER_SALE]);
+
+    // The exclusive end (2026-10-17 00:00 JST) is not part of the sale.
+    const html = await renderCalendar({ year: "2026", month: "10", day: "2026-10-17" });
+    const section = selectedSection(html);
+
+    expect(section).toContain("0件のセール");
+    expect(section).toContain("この日のセールはありません");
+    expect(section).not.toContain("/sales/");
+  });
+
+  it("draws sale bars per week and lists only this month's sales", async () => {
     listPublishedSaleEvents.mockResolvedValue([OCTOBER_SALE, SEPTEMBER_GRID_SALE]);
 
     const html = await renderCalendar();
 
-    for (const day of ["2026-10-15", "2026-10-16"]) {
-      expect(cellHtml(html, day)).toContain(`href="/sales/${OCTOBER_SALE.id}"`);
-    }
-    expect(cellHtml(html, "2026-10-17")).not.toContain("/sales/");
-    expect(cellHtml(html, "2026-09-28")).toContain(`href="/sales/${SEPTEMBER_GRID_SALE.id}"`);
+    expect(segments(html)).toEqual([
+      // 2026-09-28 (Mon) in the first week row.
+      { id: SEPTEMBER_GRID_SALE.id, startColumn: 1, span: 1, lane: 0 },
+      // 2026-10-15 (Thu) to 2026-10-16 (Fri).
+      { id: OCTOBER_SALE.id, startColumn: 4, span: 2, lane: 0 },
+    ]);
+    expect(cellHtml(html, "2026-10-15")).toContain("セール1件");
+    expect(cellHtml(html, "2026-10-17")).toContain("セールなし");
 
-    const list = html.slice(html.indexOf("この月のセール"));
+    const list = html.slice(html.indexOf('id="month-sales-heading"'));
     expect(list).toContain("十月セール");
-    expect(list).toContain("10/15(木) 〜 10/16(金)");
     expect(list).not.toContain("九月末セール");
   });
 
-  it("shows at most two events per day and a +n counter", async () => {
+  it("splits a sale crossing a week boundary into two bars", async () => {
+    // 2026-10-16 (Fri) to 2026-10-20 (Tue), date-only.
+    const crossing = makeSale(
+      "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "週またぎセール",
+      "2026-10-15T15:00:00Z",
+      "2026-10-20T15:00:00Z",
+      true,
+    );
+    listPublishedSaleEvents.mockResolvedValue([crossing]);
+
+    const html = await renderCalendar();
+
+    expect(segments(html)).toEqual([
+      { id: crossing.id, startColumn: 5, span: 2, lane: 0 },
+      { id: crossing.id, startColumn: 0, span: 3, lane: 0 },
+    ]);
+  });
+
+  it("shows at most two bar lanes and a +n counter", async () => {
     listPublishedSaleEvents.mockResolvedValue(
       ["1", "2", "3", "4"].map((n) =>
         makeSale(
@@ -244,17 +368,34 @@ describe("CalendarPage", () => {
     );
 
     const html = await renderCalendar();
-    const cell = cellHtml(html, "2026-10-20");
+    const bars = segments(html);
 
-    expect(cell.match(/href="\/sales\//g)).toHaveLength(2);
-    expect(cell).toContain("+2");
+    expect(bars).toHaveLength(2);
+    expect(bars.map((bar) => bar.lane)).toEqual([0, 1]);
+    expect(html).toContain('data-more-date="2026-10-20"');
+    expect(html.slice(html.indexOf('data-more-date="2026-10-20"'))).toMatch(/^[^<]*>\+2</);
+    expect(cellHtml(html, "2026-10-20")).toContain("セール4件");
   });
 
   it("renders the empty state", async () => {
     const html = await renderCalendar();
 
     expect(html).toContain("この月のセールはありません");
+    expect(html).toContain("この日のセールはありません");
     expect(html).not.toContain('href="/sales/');
+    expect(segments(html)).toEqual([]);
+  });
+
+  it("is a Server Component without client directives", async () => {
+    const { readFile } = await import("node:fs/promises");
+    for (const file of [
+      "src/app/calendar/page.tsx",
+      "src/components/MonthGrid.tsx",
+      "src/components/RetailerFilter.tsx",
+      "src/components/SaleList.tsx",
+    ]) {
+      expect(await readFile(file, "utf8")).not.toMatch(/["']use client["']/);
+    }
   });
 
   it("renders a generic error without leaking details and logs only the error name", async () => {

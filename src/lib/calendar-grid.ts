@@ -140,13 +140,112 @@ export function filterMonthSales<T extends SaleTiming>(
 }
 
 // null yearMonth means "current month" (plain /calendar).
-export function calendarHref(yearMonth: YearMonth | null, retailerSlug?: string): string {
+export function calendarHref(
+  yearMonth: YearMonth | null,
+  retailerSlug?: string,
+  dayKey?: string,
+): string {
   const params = new URLSearchParams();
   if (yearMonth !== null) {
     params.set("year", String(yearMonth.year));
     params.set("month", String(yearMonth.month));
+    if (dayKey !== undefined) params.set("day", dayKey);
   }
   if (retailerSlug !== undefined) params.set("retailer", retailerSlug);
   const query = params.toString();
   return query === "" ? "/calendar" : `/calendar?${query}`;
+}
+
+// A valid "YYYY-MM-DD" inside the grid wins; otherwise JST today when it is
+// in the grid; otherwise the 1st of the target month.
+export function resolveSelectedDay(
+  dayParam: SearchParamValue,
+  days: readonly CalendarDay[],
+): CalendarDay {
+  if (typeof dayParam === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dayParam)) {
+    const requested = days.find((day) => day.key === dayParam);
+    if (requested !== undefined) return requested;
+  }
+  const today = days.find((day) => day.isToday);
+  if (today !== undefined) return today;
+  const firstOfMonth = days.find((day) => day.inMonth && day.day === 1);
+  if (firstOfMonth === undefined) throw new Error("calendar grid has no first day");
+  return firstOfMonth;
+}
+
+const WEEKDAYS_JA = ["日", "月", "火", "水", "木", "金", "土"] as const;
+
+// "10月15日(木)"
+export function formatDayHeading(day: CalendarDay): string {
+  const { month } = getJstParts(day.start);
+  return `${month}月${day.day}日(${WEEKDAYS_JA[day.weekday]})`;
+}
+
+export type WeekSegment<T> = {
+  event: T;
+  startColumn: number; // 0-6
+  span: number; // 1-7
+  lane: number; // 0 .. maxLanes-1
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+};
+
+export type CalendarWeek<T> = {
+  days: CalendarDay[];
+  segments: WeekSegment<T>[];
+  hiddenCounts: number[]; // per column, events that did not fit in a lane
+};
+
+// Splits each sale into one bar segment per week row and packs segments
+// into at most `maxLanes` lanes. Overlap uses the same exclusive-end rule
+// as assignEventsToDays, so bars always match the per-day assignment.
+export function buildCalendarWeeks<T extends SaleTiming>(
+  days: readonly CalendarDay[],
+  sales: readonly T[],
+  maxLanes: number = MAX_EVENTS_PER_DAY,
+): CalendarWeek<T>[] {
+  const weeks: CalendarWeek<T>[] = [];
+  for (let offset = 0; offset < days.length; offset += 7) {
+    const weekDays = days.slice(offset, offset + 7);
+    const candidates: Omit<WeekSegment<T>, "lane">[] = [];
+    for (const sale of sales) {
+      const columns = weekDays.flatMap((day, column) =>
+        overlaps(sale, day.start, day.end) ? [column] : [],
+      );
+      if (columns.length === 0) continue;
+      const first = columns[0];
+      const last = columns[columns.length - 1];
+      candidates.push({
+        event: sale,
+        startColumn: first,
+        span: last - first + 1,
+        continuesBefore:
+          first === 0 && new Date(sale.startsAt).getTime() < weekDays[0].start.getTime(),
+        continuesAfter:
+          last === weekDays.length - 1 &&
+          new Date(sale.endsAt).getTime() > weekDays[weekDays.length - 1].end.getTime(),
+      });
+    }
+
+    // Earlier start first, then longer bars, then input order (stable sort).
+    candidates.sort((a, b) => a.startColumn - b.startColumn || b.span - a.span);
+
+    const laneEnds: number[] = []; // first free column per lane
+    const segments: WeekSegment<T>[] = [];
+    const hiddenCounts = Array.from({ length: weekDays.length }, () => 0);
+    for (const candidate of candidates) {
+      const lane = laneEnds.findIndex((end) => end <= candidate.startColumn);
+      const target = lane === -1 ? laneEnds.length : lane;
+      if (target < maxLanes) {
+        laneEnds[target] = candidate.startColumn + candidate.span;
+        segments.push({ ...candidate, lane: target });
+      } else {
+        for (let column = candidate.startColumn; column < candidate.startColumn + candidate.span; column++) {
+          hiddenCounts[column] += 1;
+        }
+      }
+    }
+    weeks.push({ days: weekDays, segments, hiddenCounts });
+  }
+  return weeks;
 }
