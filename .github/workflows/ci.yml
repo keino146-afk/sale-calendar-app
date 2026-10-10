@@ -62,3 +62,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Check client bundle
+        run: npm run check:client-bundle
