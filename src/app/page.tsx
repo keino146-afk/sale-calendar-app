@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { connection } from "next/server";
 import { RetailerFilter } from "@/components/RetailerFilter";
 import { SaleList, type SaleListItem } from "@/components/SaleList";
@@ -52,7 +53,12 @@ export default async function Home({ searchParams }: PageProps<"/">) {
 
   return (
     <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 py-10">
-      <h1 className="text-2xl font-semibold">セールカレンダー</h1>
+      <div className="flex items-baseline justify-between gap-4">
+        <h1 className="text-2xl font-semibold">セールカレンダー</h1>
+        <Link href="/calendar" className="text-sm underline">
+          カレンダーを見る
+        </Link>
+      </div>
       {retailers === null || sales === null ? (
         <p>セール情報を読み込めませんでした</p>
       ) : (
