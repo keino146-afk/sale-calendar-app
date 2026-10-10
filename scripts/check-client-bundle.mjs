@@ -1,9 +1,13 @@
 // Fails if browser-delivered build output contains Supabase client library
 // code, a hosted Supabase project URL, or a Supabase API key prefix.
-// Scanned: .next/static/**/*.js and prerendered .next/server/app/**/*.{html,rsc}.
+// Scanned: .next/static/**/*.js and prerendered .next/server/**/*.{html,rsc}
+// (app/, pages/, and route-cache/, which Next.js uses when a deployment
+// adapter is active, e.g. on Vercel).
 // Server JS (.next/server/**/*.js) is intentionally not scanned: it may
 // legitimately bundle @supabase/supabase-js.
-// Reports only file names and rule names, never matched text.
+// The prerender manifest is used only to know whether prerendered App Router
+// pages are expected, so an empty scan cannot pass silently.
+// Reports only counts, file names, and rule names, never matched text.
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -57,26 +61,64 @@ export async function scanDirectory(dir, extensions = [".js"], baseDir = dir) {
   return { fileCount: files.length, findings };
 }
 
+async function scanIfPresent(dir, extensions, baseDir) {
+  try {
+    return await scanDirectory(dir, extensions, baseDir);
+  } catch (error) {
+    if (error && error.code === "ENOENT") return { fileCount: 0, findings: [] };
+    throw error;
+  }
+}
+
+// Number of prerendered App Router pages (routes with an .rsc data route).
+// Only `routes[*].dataRoute` is read; other manifest fields (including the
+// preview-mode secrets) are never inspected or output.
+// Returns null if the manifest is missing or unreadable.
+export async function readExpectedPrerenderAppRoutes(nextDir) {
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(path.join(nextDir, "prerender-manifest.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  const routes = manifest && typeof manifest.routes === "object" ? manifest.routes : null;
+  if (routes === null) return null;
+  return Object.values(routes).filter(
+    (route) => route && typeof route.dataRoute === "string" && route.dataRoute.endsWith(".rsc"),
+  ).length;
+}
+
 // Scans the browser-delivered parts of a Next.js build directory (.next).
 export async function scanBuildOutput(nextDir) {
   const staticResult = await scanDirectory(path.join(nextDir, "static"), [".js"], nextDir);
-
-  let prerenderResult = { fileCount: 0, findings: [] };
-  try {
-    prerenderResult = await scanDirectory(
-      path.join(nextDir, "server", "app"),
-      [".html", ".rsc"],
-      nextDir,
-    );
-  } catch (error) {
-    if (!(error && error.code === "ENOENT")) throw error;
-  }
+  const serverDir = path.join(nextDir, "server");
+  const htmlResult = await scanIfPresent(serverDir, [".html"], nextDir);
+  const rscResult = await scanIfPresent(serverDir, [".rsc"], nextDir);
 
   return {
     staticJsCount: staticResult.fileCount,
-    prerenderCount: prerenderResult.fileCount,
-    findings: [...staticResult.findings, ...prerenderResult.findings],
+    htmlCount: htmlResult.fileCount,
+    rscCount: rscResult.fileCount,
+    expectedPrerenderAppRoutes: await readExpectedPrerenderAppRoutes(nextDir),
+    findings: [...staticResult.findings, ...htmlResult.findings, ...rscResult.findings],
   };
+}
+
+// Returns null when the build output passes, otherwise a generic reason.
+export function evaluateScan(result) {
+  if (result.staticJsCount === 0) {
+    return "no JavaScript files found in .next/static.";
+  }
+  if (result.expectedPrerenderAppRoutes === null) {
+    return ".next/prerender-manifest.json not found or unreadable.";
+  }
+  if (result.findings.length > 0) {
+    return "forbidden content found in browser-delivered output:";
+  }
+  if (result.expectedPrerenderAppRoutes > 0 && result.htmlCount + result.rscCount === 0) {
+    return "prerender artifacts expected but none found.";
+  }
+  return null;
 }
 
 async function main() {
@@ -91,13 +133,9 @@ async function main() {
     throw error;
   }
 
-  if (result.staticJsCount === 0) {
-    console.error("check-client-bundle: no JavaScript files found in .next/static.");
-    process.exit(1);
-  }
-
-  if (result.findings.length > 0) {
-    console.error("check-client-bundle: forbidden content found in browser-delivered output:");
+  const failure = evaluateScan(result);
+  if (failure !== null) {
+    console.error(`check-client-bundle: ${failure}`);
     for (const finding of result.findings) {
       console.error(`  ${finding.file}: ${finding.rule}`);
     }
@@ -105,7 +143,7 @@ async function main() {
   }
 
   console.log(
-    `check-client-bundle: OK (${result.staticJsCount} static JS, ${result.prerenderCount} prerendered HTML/RSC files scanned)`,
+    `check-client-bundle: OK (${result.staticJsCount} static JS, ${result.htmlCount} HTML, ${result.rscCount} RSC, ${result.expectedPrerenderAppRoutes} expected prerendered app pages)`,
   );
 }
 
