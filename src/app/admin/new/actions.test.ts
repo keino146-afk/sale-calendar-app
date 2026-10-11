@@ -199,4 +199,27 @@ describe("createSaleCandidateAction", () => {
     expect(url).not.toContain("evil");
     expect(url).not.toContain("Phase4D");
   });
+
+  it("keeps a valid candidate id on error and drops anything else", async () => {
+    const candidateId = "55555555-5555-4555-8555-555555555555";
+    expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, title: " ", candidateId })))).toBe(
+      `/admin/new?mode=date&candidateId=${candidateId}&error=title`,
+    );
+    expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, title: " ", candidateId: "x&error=y" })))).toBe(
+      "/admin/new?mode=date&error=title",
+    );
+  });
+
+  it("validates prefilled submissions like any other (no candidate shortcut)", async () => {
+    const candidateId = "55555555-5555-4555-8555-555555555555";
+    mocks.createSaleCandidate.mockResolvedValue({ ok: false, reason: "duplicate" });
+
+    expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, candidateId })))).toBe(
+      `/admin/new?mode=date&candidateId=${candidateId}&error=duplicate`,
+    );
+    expect(mocks.getActiveRetailerForAdmin).toHaveBeenCalled();
+    expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, candidateId, sourceUrl: "https://evil.example/" })))).toBe(
+      `/admin/new?mode=date&candidateId=${candidateId}&error=source_domain`,
+    );
+  });
 });

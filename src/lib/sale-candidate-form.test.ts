@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  saleFormDefaultsFromPeriod,
+  toJstDateTimeLocal,
   isOnOfficialDomain,
   isValidTitle,
   parseJstDateTime,
@@ -193,5 +195,60 @@ describe("isOnOfficialDomain", () => {
     expect(isOnOfficialDomain("https://www.amazon.co.jp/", "https://www.rakuten.co.jp/")).toBe(false);
     expect(isOnOfficialDomain("https://rakuten.co.jp.evil.example/", "https://www.rakuten.co.jp/")).toBe(false);
     expect(isOnOfficialDomain("https://fakerakuten.co.jp/", "https://www.rakuten.co.jp/")).toBe(false);
+  });
+});
+
+describe("saleFormDefaultsFromPeriod", () => {
+  const base = {
+    retailerId: RETAILER_ID,
+    title: "プライム感謝祭",
+    description: null,
+    sourceUrl: "https://www.amazon.co.jp/primeday",
+    sourceCheckedAt: new Date("2026-10-02T03:00:00Z"),
+  };
+
+  it("converts a date-only period to inclusive JST dates", () => {
+    expect(
+      saleFormDefaultsFromPeriod({
+        ...base,
+        startsAt: new Date("2026-10-10T15:00:00Z"),
+        endsAt: new Date("2026-10-13T15:00:00Z"),
+      }),
+    ).toEqual({
+      retailerId: RETAILER_ID,
+      title: "プライム感謝祭",
+      description: "",
+      startDate: "2026-10-11",
+      endDate: "2026-10-13",
+      startsAt: "2026-10-11T00:00",
+      endsAt: "2026-10-14T00:00",
+      sourceUrl: "https://www.amazon.co.jp/primeday",
+      sourceCheckedAt: "2026-10-02T12:00",
+    });
+  });
+
+  it("keeps a timed end on its own day", () => {
+    const defaults = saleFormDefaultsFromPeriod({
+      ...base,
+      startsAt: new Date("2026-10-15T15:00:00Z"),
+      endsAt: new Date("2026-10-19T14:59:00Z"),
+    });
+    expect(defaults.endDate).toBe("2026-10-19");
+    expect(defaults.endsAt).toBe("2026-10-19T23:59");
+  });
+
+  it("round-trips through the form parser", () => {
+    const startsAt = new Date("2026-10-10T15:00:00Z");
+    const endsAt = new Date("2026-10-13T15:00:00Z");
+    const d = saleFormDefaultsFromPeriod({ ...base, startsAt, endsAt });
+    const result = parseSaleCandidateForm(
+      form({ retailerId: d.retailerId, title: d.title, description: d.description, startDate: d.startDate, endDate: d.endDate, sourceUrl: d.sourceUrl, sourceCheckedAt: d.sourceCheckedAt }),
+      "date",
+    );
+    expect(result.ok && [result.value.startsAt, result.value.endsAt]).toEqual([startsAt, endsAt]);
+  });
+
+  it("formats datetime-local values in JST", () => {
+    expect(toJstDateTimeLocal(new Date("2025-12-31T15:05:00Z"))).toBe("2026-01-01T00:05");
   });
 });
