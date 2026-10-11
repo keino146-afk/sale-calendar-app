@@ -139,6 +139,19 @@ describe("admin security boundary", () => {
     }
   });
 
+  it("only reads collection candidates (no candidate mutation path)", async () => {
+    expect(await filesMatching(DATA_CODE, /collection_candidates/)).toEqual([
+      "src/server/data/admin-collection-candidates.ts",
+      "src/server/supabase/database.types.ts",
+    ]);
+    const reader = await readFile("src/server/data/admin-collection-candidates.ts", "utf8");
+    expect(reader).not.toMatch(/\.(insert|update|upsert|delete|rpc)\(/);
+    // The collector write RPC is never used by the web app.
+    expect(await filesMatching(APP_CODE, /submit_collection_candidate/)).toEqual([
+      "src/server/supabase/database.types.ts",
+    ]);
+  });
+
   it("keeps public pages free of admin session code", async () => {
     const publicPages = APP_CODE.filter(
       (file) => file.startsWith("src/app/") && !file.startsWith("src/app/admin/"),
