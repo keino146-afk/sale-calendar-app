@@ -42,6 +42,28 @@ export function insertTypeGuarantees(client: AdminSupabaseClient) {
   return typedRow;
 }
 
+const IMPORT_ARGS = {
+  p_candidate_id: "33333333-3333-4333-8333-333333333333",
+  p_retailer_id: VALID.retailer_id,
+  p_title: VALID.title,
+  p_description: null,
+  p_starts_at: VALID.starts_at,
+  p_ends_at: VALID.ends_at,
+  p_is_date_only: true,
+  p_source_url: VALID.source_url,
+  p_source_checked_at: "2026-10-11T00:30:00.000Z",
+};
+
+// The candidate import RPC: description may be null, nothing else is widened.
+export function importArgsTypeGuarantees(client: AdminSupabaseClient) {
+  void client.rpc("import_collection_candidate", IMPORT_ARGS);
+  void client.rpc("import_collection_candidate", { ...IMPORT_ARGS, p_description: "説明" });
+  // @ts-expect-error the title is never null
+  void client.rpc("import_collection_candidate", { ...IMPORT_ARGS, p_title: null });
+  // @ts-expect-error the candidate id is required
+  void client.rpc("import_collection_candidate", { ...IMPORT_ARGS, p_candidate_id: undefined });
+}
+
 describe("AppDatabase sale_events insert type", () => {
   it("allows exactly the eight columns granted to authenticated", async () => {
     const migration = await readFile("supabase/migrations/20261010015152_initial_schema.sql", "utf8");
@@ -55,5 +77,6 @@ describe("AppDatabase sale_events insert type", () => {
 
   it("keeps the compile-time guarantees in the typechecked build", () => {
     expect(typeof insertTypeGuarantees).toBe("function");
+    expect(typeof importArgsTypeGuarantees).toBe("function");
   });
 });

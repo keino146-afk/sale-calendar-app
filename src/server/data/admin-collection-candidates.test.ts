@@ -33,6 +33,7 @@ const DETAIL_ROW = {
   source_checked_at: "2026-10-02T00:00:00+00:00",
   evidence_excerpt: "プライム感謝祭を開催",
   parser_version: "amazon-rss-1",
+  imported_sale_event_id: null,
 };
 
 const fake = (result: FakeResult) => createFakeSupabase(result);
@@ -97,9 +98,18 @@ describe("getCollectionCandidate", () => {
       evidenceExcerpt: "プライム感謝祭を開催",
       parserVersion: "amazon-rss-1",
       description: null,
+      importedSaleEventId: null,
     });
     expect(String(f.calls[0].args[0])).not.toMatch(/hash/);
     expect(f.calls).toContainEqual({ method: "eq", args: ["id", ID] });
+  });
+
+  it("exposes the linked sale of an imported candidate only as a valid id", async () => {
+    const saleId = "77777777-7777-4777-8777-777777777777";
+    const linked = fake({ data: { ...DETAIL_ROW, review_state: "imported", imported_sale_event_id: saleId }, error: null });
+    expect(await getCollectionCandidate(linked.client as never, ID)).toMatchObject({ reviewState: "imported", importedSaleEventId: saleId });
+    const odd = fake({ data: { ...DETAIL_ROW, review_state: "imported", imported_sale_event_id: "../x" }, error: null });
+    expect(await getCollectionCandidate(odd.client as never, ID)).toMatchObject({ importedSaleEventId: null });
   });
 
   it("returns null for a missing candidate", async () => {

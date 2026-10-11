@@ -182,7 +182,10 @@ describe("common fields", () => {
     "https://www.amazon.co.jp:/",
     "https://user@www.aboutamazon.jp/news/a/b",
     "http://www.aboutamazon.jp/news/a/b",
-  ])("rejects source URL %s (port, credentials or http)", (raw) => {
+    "https://www.amazon.co.jp/a b",
+    "https://www.amazon.co.jp/a\tb",
+    "https://www.amazon.co.jp/a\u0000b",
+  ])("rejects source URL %j (port, credentials, http, whitespace or control)", (raw) => {
     expect(parseSourceUrl(raw)).toBeNull();
   });
 

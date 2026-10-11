@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     getActiveRetailerForAdmin: vi.fn(),
     createSaleCandidate: vi.fn(),
     rpc: vi.fn(),
+    importRpc: vi.fn(),
     redirect: vi.fn((url: string) => {
       throw new RedirectSentinel(url);
     }),
@@ -38,6 +39,8 @@ const RETAILER = { id: RETAILER_ID, slug: "rakuten", name: "楽天市場", offic
 const AMAZON = { id: AMAZON_ID, slug: "amazon", name: "Amazon", officialBaseUrl: "https://www.amazon.co.jp/" };
 const QOO10 = { id: QOO10_ID, slug: "qoo10", name: "Qoo10", officialBaseUrl: "https://www.qoo10.jp/" };
 const ABOUTAMAZON_ARTICLE = "https://www.aboutamazon.jp/news/amazon-prime/prime-appreciation-sale-2026";
+const CANDIDATE_ID = "55555555-5555-4555-8555-555555555555";
+const IMPORTED_ID = "66666666-6666-4666-8666-666666666666";
 
 // Stand-in for public.is_allowed_manual_source with the seeded Amazon policy
 // (the real function is covered by the pgTAP tests).
@@ -48,6 +51,12 @@ function policyRpc(name: string, args: { p_retailer_id: string; p_hostname: stri
     args.p_hostname === "www.aboutamazon.jp" &&
     /^https:\/\/www\.aboutamazon\.jp\/news\/[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/.test(args.p_source_url);
   return Promise.resolve({ data: allowed, error: null });
+}
+
+// The admin client's rpc(): the source policy check or the atomic import.
+function fakeRpc(name: string, args: Record<string, unknown>) {
+  if (name === "import_collection_candidate") return mocks.importRpc(args);
+  return policyRpc(name, args as Parameters<typeof policyRpc>[1]);
 }
 
 const VALID = {
@@ -82,7 +91,8 @@ beforeEach(() => {
   mocks.requireAdmin.mockResolvedValue(CLIENT);
   mocks.getActiveRetailerForAdmin.mockResolvedValue(RETAILER);
   mocks.createSaleCandidate.mockResolvedValue({ ok: true, id: NEW_ID });
-  mocks.rpc.mockImplementation(policyRpc);
+  mocks.rpc.mockImplementation(fakeRpc);
+  mocks.importRpc.mockResolvedValue({ data: IMPORTED_ID, error: null });
 });
 
 afterEach(() => {
@@ -92,6 +102,7 @@ afterEach(() => {
     mocks.getActiveRetailerForAdmin,
     mocks.createSaleCandidate,
     mocks.rpc,
+    mocks.importRpc,
   ]) {
     mock.mockReset();
   }
@@ -231,12 +242,13 @@ describe("createSaleCandidateAction", () => {
 
   it("validates prefilled submissions like any other (no candidate shortcut)", async () => {
     const candidateId = "55555555-5555-4555-8555-555555555555";
-    mocks.createSaleCandidate.mockResolvedValue({ ok: false, reason: "duplicate" });
+    mocks.importRpc.mockResolvedValue({ data: null, error: { code: "23505", message: "duplicate key sale_events_active_dedup_uidx" } });
 
     expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, candidateId })))).toBe(
       `/admin/new?mode=date&candidateId=${candidateId}&error=duplicate`,
     );
     expect(mocks.getActiveRetailerForAdmin).toHaveBeenCalled();
+    mocks.importRpc.mockClear();
     expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, candidateId, sourceUrl: "https://evil.example/" })))).toBe(
       `/admin/new?mode=date&candidateId=${candidateId}&error=source_domain`,
     );
@@ -310,7 +322,7 @@ describe("createSaleCandidateAction source policy", () => {
   it("checks the policy after the retailer and before the insert", async () => {
     const order: string[] = [];
     mocks.getActiveRetailerForAdmin.mockImplementation(async () => (order.push("retailer"), AMAZON));
-    mocks.rpc.mockImplementation(async (...args: Parameters<typeof policyRpc>) => (order.push("policy"), policyRpc(...args)));
+    mocks.rpc.mockImplementation(async (...args: Parameters<typeof fakeRpc>) => (order.push("policy"), fakeRpc(...args)));
     mocks.createSaleCandidate.mockImplementation(async () => (order.push("insert"), { ok: true, id: NEW_ID }));
 
     await redirectUrl(createSaleCandidateAction(form({ ...VALID, retailerId: AMAZON_ID, sourceUrl: ABOUTAMAZON_ARTICLE })));
@@ -320,13 +332,117 @@ describe("createSaleCandidateAction source policy", () => {
 
   it("validates a candidate-prefilled aboutamazon.jp URL on submit", async () => {
     const candidateId = "55555555-5555-4555-8555-555555555555";
-    expect(await amazon(ABOUTAMAZON_ARTICLE, { candidateId })).toBe(`/admin/sales/${NEW_ID}?done=created`);
-    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(await amazon(ABOUTAMAZON_ARTICLE, { candidateId })).toBe(`/admin/sales/${IMPORTED_ID}?done=created`);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual(["is_allowed_manual_source", "import_collection_candidate"]);
 
-    mocks.createSaleCandidate.mockClear();
+    mocks.importRpc.mockClear();
     expect(await amazon("https://www.aboutamazon.jp.evil.example/news/a/b", { candidateId })).toBe(
       `/admin/new?mode=date&candidateId=${candidateId}&error=source_domain`,
     );
+    expect(mocks.importRpc).not.toHaveBeenCalled();
     expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+});
+
+describe("createSaleCandidateAction candidate import", () => {
+  const EDITED = {
+    ...VALID,
+    retailerId: AMAZON_ID,
+    candidateId: CANDIDATE_ID,
+    title: "  管理者が直したタイトル  ",
+    description: "管理者が確認した説明",
+    startDate: "2026-11-20",
+    endDate: "2026-11-22",
+    sourceUrl: ABOUTAMAZON_ARTICLE,
+  };
+  const submit = (fields: Record<string, string> = {}) => {
+    mocks.getActiveRetailerForAdmin.mockResolvedValue(AMAZON);
+    return redirectUrl(createSaleCandidateAction(form({ ...EDITED, ...fields })));
+  };
+
+  it("uses the existing manual create path without a candidate id", async () => {
+    expect(await redirectUrl(createSaleCandidateAction(form(VALID)))).toBe(`/admin/sales/${NEW_ID}?done=created`);
+    expect(mocks.createSaleCandidate).toHaveBeenCalledTimes(1);
+    expect(mocks.importRpc).not.toHaveBeenCalled();
+  });
+
+  it("ignores a malformed candidate id and keeps the manual path", async () => {
+    expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, candidateId: "not-a-uuid" })))).toBe(
+      `/admin/sales/${NEW_ID}?done=created`,
+    );
+    expect(mocks.importRpc).not.toHaveBeenCalled();
+  });
+
+  it("imports through one atomic RPC with the admin's final values", async () => {
+    expect(await submit()).toBe(`/admin/sales/${IMPORTED_ID}?done=created`);
+    expect(mocks.importRpc).toHaveBeenCalledTimes(1);
+    expect(mocks.importRpc).toHaveBeenCalledWith({
+      p_candidate_id: CANDIDATE_ID,
+      p_retailer_id: AMAZON_ID,
+      p_title: "管理者が直したタイトル",
+      p_description: "管理者が確認した説明",
+      p_starts_at: "2026-11-19T15:00:00.000Z",
+      p_ends_at: "2026-11-22T15:00:00.000Z",
+      p_is_date_only: true,
+      p_source_url: ABOUTAMAZON_ARTICLE,
+      p_source_checked_at: "2026-10-11T00:30:00.000Z",
+    });
+    // No plain insert and no second write after the import.
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual(["is_allowed_manual_source", "import_collection_candidate"]);
+  });
+
+  it("imports with Amazon's primary domain (single RPC call, no policy lookup)", async () => {
+    expect(await submit({ sourceUrl: "https://www.amazon.co.jp/fmc/prime-day", description: "" })).toBe(
+      `/admin/sales/${IMPORTED_ID}?done=created`,
+    );
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual(["import_collection_candidate"]);
+    expect(mocks.importRpc.mock.calls[0][0]).toMatchObject({ p_description: null });
+  });
+
+  it("never passes a status or internal field to the import", async () => {
+    await submit({ status: "published", published_at: "x", title_key: "x", review_state: "imported" });
+    expect(Object.keys(mocks.importRpc.mock.calls[0][0] as object).sort()).toEqual([
+      "p_candidate_id",
+      "p_description",
+      "p_ends_at",
+      "p_is_date_only",
+      "p_retailer_id",
+      "p_source_checked_at",
+      "p_source_url",
+      "p_starts_at",
+      "p_title",
+    ]);
+  });
+
+  it.each([
+    ["55000", "candidate_state"],
+    ["P0002", "candidate_state"],
+    ["23505", "duplicate"],
+    ["22023", "invalid_input"],
+    ["42501", "failed"],
+    ["XX000", "failed"],
+  ])("maps database code %s to error=%s without details", async (code, reason) => {
+    mocks.importRpc.mockResolvedValue({ data: null, error: { code, message: "candidate is not importable 候補A1" } });
+    const url = await submit();
+    expect(url).toBe(`/admin/new?mode=date&candidateId=${CANDIDATE_ID}&error=${reason}`);
+    expect(url).not.toContain("importable");
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on a thrown request or an unexpected result", async () => {
+    mocks.importRpc.mockRejectedValue(new Error("network"));
+    expect(await submit()).toBe(`/admin/new?mode=date&candidateId=${CANDIDATE_ID}&error=failed`);
+    mocks.importRpc.mockResolvedValue({ data: "not-an-id", error: null });
+    expect(await submit()).toBe(`/admin/new?mode=date&candidateId=${CANDIDATE_ID}&error=failed`);
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["source domain", { sourceUrl: "https://evil-aboutamazon.jp/news/a/b" }, "source_domain"],
+    ["form validation", { title: " " }, "title"],
+  ])("does not call the import after a %s failure", async (_label, fields, code) => {
+    expect(await submit(fields)).toBe(`/admin/new?mode=date&candidateId=${CANDIDATE_ID}&error=${code}`);
+    expect(mocks.importRpc).not.toHaveBeenCalled();
   });
 });

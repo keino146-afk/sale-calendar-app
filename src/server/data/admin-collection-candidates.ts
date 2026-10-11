@@ -5,7 +5,8 @@ import { DataAccessError } from "./errors";
 
 // Admin-only, read-only access to collection candidates. Runs as the
 // signed-in admin through RLS (collection_candidates_admin_read). Nothing
-// here changes a candidate: import/dismiss will be a separate atomic RPC.
+// here changes a candidate: importing is the atomic RPC in
+// admin-candidate-import.ts.
 // Hash columns are never selected; they are not needed for review.
 
 export const CANDIDATE_REVIEW_STATES = ["new", "imported", "dismissed"] as const;
@@ -32,11 +33,12 @@ export type CollectionCandidateDetail = CollectionCandidateSummary & {
   sourceCheckedAt: string;
   evidenceExcerpt: string;
   parserVersion: string;
+  importedSaleEventId: string | null;
 };
 
 const SUMMARY_COLUMNS =
   "id, title, starts_at, ends_at, is_date_only, review_state, source_changed, first_seen_at, last_seen_at, retailers!inner(id, slug, name)";
-const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, description, source_url, source_checked_at, evidence_excerpt, parser_version`;
+const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, description, source_url, source_checked_at, evidence_excerpt, parser_version, imported_sale_event_id`;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -69,6 +71,7 @@ type DetailRow = SummaryRow & {
   source_checked_at: string;
   evidence_excerpt: string;
   parser_version: string;
+  imported_sale_event_id: string | null;
 };
 
 function fail(context: string, error: { code?: string } | null): never {
@@ -134,5 +137,6 @@ export async function getCollectionCandidate(
     sourceCheckedAt: data.source_checked_at,
     evidenceExcerpt: data.evidence_excerpt,
     parserVersion: data.parser_version,
+    importedSaleEventId: isCandidateId(data.imported_sale_event_id) ? data.imported_sale_event_id : null,
   };
 }

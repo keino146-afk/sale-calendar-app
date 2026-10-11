@@ -107,6 +107,7 @@ describe("admin security boundary", () => {
   it("calls only the known RPCs", async () => {
     const allowed = new Set([
       "current_user_is_admin",
+      "import_collection_candidate",
       "is_allowed_manual_source",
       "publish_sale_event",
       "reject_sale_event",
@@ -151,6 +152,16 @@ describe("admin security boundary", () => {
     expect(await filesMatching(APP_CODE, /submit_collection_candidate/)).toEqual([
       "src/server/supabase/database.types.ts",
     ]);
+    // The only candidate state change is the atomic import RPC, called from
+    // one data module that makes no other write.
+    expect(await filesMatching(APP_CODE, /import_collection_candidate/)).toEqual([
+      "src/server/data/admin-candidate-import.ts",
+      "src/server/supabase/app-database.ts",
+      "src/server/supabase/database.types.ts",
+    ]);
+    const importer = await readFile("src/server/data/admin-candidate-import.ts", "utf8");
+    expect(importer.match(/\.rpc\(/g)).toHaveLength(1);
+    expect(importer).not.toMatch(/\.(from|insert|update|upsert|delete)\(/);
   });
 
   it("never reads source policies directly (database check only)", async () => {

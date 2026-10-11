@@ -92,6 +92,34 @@ export default async function AdminCollectionCandidatePage({
           <p className="break-all text-xs text-foreground/50">{candidate.sourceUrl}</p>
         </section>
       </article>
+      <CandidateAction candidate={candidate} />
+    </Shell>
+  );
+}
+
+// Only a new candidate can be registered; the import RPC enforces the same.
+function CandidateAction({ candidate }: { candidate: CollectionCandidateDetail }) {
+  if (candidate.reviewState === "imported") {
+    return (
+      <section data-candidate-imported="true" className="flex flex-col gap-2 rounded-2xl bg-white p-4 text-sm shadow-sm">
+        <p>この候補は登録済みです。</p>
+        {candidate.importedSaleEventId !== null ? (
+          <Link href={`/admin/sales/${candidate.importedSaleEventId}`} className="w-fit text-blue-600">
+            登録したセールを見る
+          </Link>
+        ) : null}
+      </section>
+    );
+  }
+  if (candidate.reviewState === "dismissed") {
+    return (
+      <p data-candidate-dismissed="true" className="rounded-2xl bg-white p-4 text-sm shadow-sm">
+        この候補は見送り済みのため登録できません。
+      </p>
+    );
+  }
+  return (
+    <>
       <Link
         href={`/admin/new?candidateId=${candidate.id}`}
         className="rounded-xl bg-blue-500 px-4 py-2.5 text-center text-[15px] font-semibold text-white"
@@ -99,9 +127,9 @@ export default async function AdminCollectionCandidatePage({
         手動登録へ進む
       </Link>
       <p className="text-xs text-foreground/60">
-        登録画面に候補の内容が入った状態で開きます。内容を確認・修正してから登録してください。この候補の状態は変わりません。
+        登録画面に候補の内容が入った状態で開きます。内容を確認・修正してから登録してください。登録すると、この候補は「登録済み」になります。セールは「確認待ち」で作られ、公開はされません。
       </p>
-    </Shell>
+    </>
   );
 }
 
