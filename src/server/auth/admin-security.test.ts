@@ -19,6 +19,11 @@ async function sourceFiles(dir: string): Promise<string[]> {
 
 const ALL = await sourceFiles("src");
 const APP_CODE = ALL.filter((file) => !/\.test\.(ts|tsx)$/.test(file) && !file.startsWith("src/test/"));
+// Code that talks to Supabase. src/collector is excluded from the
+// query-builder write checks because it never imports a Supabase client
+// (enforced in src/collector/collector.test.ts); its .update()/.delete() calls
+// are on hashes and URLSearchParams.
+const DATA_CODE = APP_CODE.filter((file) => !file.startsWith("src/collector/"));
 
 async function filesMatching(files: string[], pattern: RegExp): Promise<string[]> {
   const hits: string[] = [];
@@ -77,13 +82,13 @@ describe("admin security boundary", () => {
   });
 
   it("never updates lifecycle columns directly", async () => {
-    expect(await filesMatching(APP_CODE, /\.update\(|status\s*:\s*["']published/)).toEqual([]);
+    expect(await filesMatching(DATA_CODE, /\.update\(|status\s*:\s*["']published/)).toEqual([]);
   });
 
   it("never writes tables directly (lifecycle changes go through RPCs)", async () => {
-    expect(await filesMatching(APP_CODE, /\.(upsert|delete)\(/)).toEqual([]);
+    expect(await filesMatching(DATA_CODE, /\.(upsert|delete)\(/)).toEqual([]);
     // The only INSERT is manual candidate creation (status left to the DB default).
-    expect(await filesMatching(APP_CODE, /\.insert\(/)).toEqual(["src/server/data/admin-sale-create.ts"]);
+    expect(await filesMatching(DATA_CODE, /\.insert\(/)).toEqual(["src/server/data/admin-sale-create.ts"]);
     const createCode = await readFile("src/server/data/admin-sale-create.ts", "utf8");
     expect(createCode).not.toMatch(/\bstatus\s*:/);
     expect(createCode).not.toMatch(/title_key\s*:|start_date_jst\s*:|published_at\s*:/);

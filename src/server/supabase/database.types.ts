@@ -19,6 +19,32 @@ export type Database = {
                   Relationships: [
 
                   ]
+                },"collection_candidates": {
+                  Row: {
+                    "content_hash": string,"description": string | null,"ends_at": string,"evidence_excerpt": string,"external_key": string,"first_seen_at": string,"id": string,"imported_sale_event_id": string | null,"is_date_only": boolean,"last_seen_at": string,"last_seen_content_hash": string,"parser_version": string,"retailer_id": string,"review_state": string,"source_changed": boolean,"source_checked_at": string,"source_id": string,"source_url": string,"starts_at": string,"title": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "content_hash": string,"description"?: string | null,"ends_at": string,"evidence_excerpt": string,"external_key": string,"first_seen_at"?: string,"id"?: string,"imported_sale_event_id"?: string | null,"is_date_only": boolean,"last_seen_at"?: string,"last_seen_content_hash": string,"parser_version": string,"retailer_id": string,"review_state"?: string,"source_changed"?: boolean,"source_checked_at": string,"source_id": string,"source_url": string,"starts_at": string,"title": string
+                  }
+                  Update: {
+                    "content_hash"?: string,"description"?: string | null,"ends_at"?: string,"evidence_excerpt"?: string,"external_key"?: string,"first_seen_at"?: string,"id"?: string,"imported_sale_event_id"?: string | null,"is_date_only"?: boolean,"last_seen_at"?: string,"last_seen_content_hash"?: string,"parser_version"?: string,"retailer_id"?: string,"review_state"?: string,"source_changed"?: boolean,"source_checked_at"?: string,"source_id"?: string,"source_url"?: string,"starts_at"?: string,"title"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "collection_candidates_imported_sale_event_id_fkey"
+      columns: ["imported_sale_event_id"]
+isOneToOne: false
+      referencedRelation: "sale_events"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "collection_candidates_retailer_id_fkey"
+      columns: ["retailer_id"]
+isOneToOne: false
+      referencedRelation: "retailers"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"retailers": {
                   Row: {
                     "created_at": string,"id": string,"is_active": boolean,"name": string,"official_base_url": string,"slug": string,"sort_order": number,"updated_at": string
@@ -93,6 +119,9 @@ isOneToOne: false
                            },
 "reopen_sale_event":
 { Args: { "p_id": string }; Returns: undefined
+                           },
+"submit_collection_candidate":
+{ Args: { "p_content_hash": string,"p_description": string,"p_ends_at": string,"p_evidence_excerpt": string,"p_external_key": string,"p_is_date_only": boolean,"p_parser_version": string,"p_retailer_id": string,"p_source_checked_at": string,"p_source_id": string,"p_source_url": string,"p_starts_at": string,"p_title": string }; Returns: string
                            }
           }
           Enums: {
