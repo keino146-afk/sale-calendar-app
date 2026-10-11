@@ -42,7 +42,7 @@ export function MonthGrid({ weeks, selectedKey, dayHref }: MonthGridProps) {
           <li
             key={week.days[0].key}
             data-week-start={week.days[0].key}
-            className="relative grid grid-cols-7 grid-rows-[1.625rem_0.75rem_0.75rem] gap-y-px py-0.5"
+            className="relative grid grid-cols-7 grid-rows-[1.5rem_1rem_1rem] gap-y-px py-0.5"
           >
             {week.days.map((day, column) => {
               const count =
@@ -99,7 +99,7 @@ export function MonthGrid({ weeks, selectedKey, dayHref }: MonthGridProps) {
                   gridColumn: `${segment.startColumn + 1} / span ${segment.span}`,
                   gridRow: segment.lane + 2,
                 }}
-                className={`pointer-events-none z-10 truncate px-1 text-[9px] font-medium leading-3 ${
+                className={`pointer-events-none z-10 truncate px-1.5 text-[10px] font-semibold leading-4 ${
                   retailerTone(segment.event.retailerSlug).bar
                 } ${segment.continuesBefore ? "rounded-l-none" : "ml-0.5 rounded-l-full"} ${
                   segment.continuesAfter ? "rounded-r-none" : "mr-0.5 rounded-r-full"
