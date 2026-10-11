@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic test feed (RSS 1.0). Every title, link and text is invented for tests; nothing is copied from any real press release. -->
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel rdf:about="https://prtimes.jp/test-company-feed">
+    <title>テスト用企業フィード</title>
+    <link>https://prtimes.jp/</link>
+    <description>テスト用</description>
+    <items>
+      <rdf:Seq>
+        <rdf:li rdf:resource="https://prtimes.jp/main/html/rd/p/000009001.000022933.html"/>
+      </rdf:Seq>
+    </items>
+  </channel>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009001.000022933.html">
+    <title>Qoo10、テスト用「メガ割」を2027年2月1日（月）17:00～2月10日（水）23:59に開催</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009001.000022933.html?utm_source=rss&amp;utm_medium=feed#top</link>
+    <description>これは完全なテスト用文章です。</description>
+    <dc:date>2026-11-20T11:00:00+09:00</dc:date>
+  </item>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009002.000022933.html">
+    <title>Qoo10、テスト用「メガポ」を開催</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009002.000022933.html</link>
+    <description>期間は2027年1月10日から1月15日までです。これは完全なテスト用文章です。</description>
+    <dc:date>2026-11-21T11:00:00+09:00</dc:date>
+  </item>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009003.000022933.html">
+    <title>Qoo10「メガ割」テスト用の新CMを公開！2027年2月1日より開催</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009003.000022933.html</link>
+    <dc:date>2026-11-22T11:00:00+09:00</dc:date>
+  </item>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009004.000022933.html">
+    <title>Qoo10「メガ割」テスト開催レポート</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009004.000022933.html</link>
+  </item>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009005.000022933.html">
+    <title>Qoo10、メガ割に関するテスト調査の結果を発表</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009005.000022933.html</link>
+  </item>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009006.000022933.html">
+    <title>Qoo10、テスト用の新機能を提供開始</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009006.000022933.html</link>
+  </item>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009007.000099999.html">
+    <title>Qoo10、テスト用「メガ割」を2027年3月1日（月）17:00～3月5日（金）23:59に開催</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009007.000099999.html</link>
+  </item>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009008.000022933.html">
+    <title>Qoo10、テスト用「メガ割」を2027年3月1日17:00から3月5日まで開催</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009008.000022933.html</link>
+  </item>
+  <item rdf:about="https://prtimes.jp/main/html/rd/p/000009009.000022933.html">
+    <title>Qoo10、テスト用「メガ割」を2027年12月28日から1月3日まで開催</title>
+    <link>https://prtimes.jp/main/html/rd/p/000009009.000022933.html</link>
+  </item>
+</rdf:RDF>
