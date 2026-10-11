@@ -62,6 +62,7 @@ const DETAIL = {
   sourceCheckedAt: "2026-10-02T03:00:00Z",
   evidenceExcerpt: "Amazon、プライム感謝祭を10月16日（金）0時から10月19日（月）23時59分まで開催",
   parserVersion: "amazon-rss-1",
+  importedSaleEventId: null,
 };
 
 function listProps(query: Record<string, string | string[] | undefined> = {}) {
@@ -191,6 +192,38 @@ describe("AdminCollectionCandidatePage", () => {
     expect(links).toEqual([`/admin/new?candidateId=${ID}`]);
     expect(html).toContain("手動登録へ進む");
     expect(html).not.toContain("<form");
+  });
+
+  it("says registering marks the candidate imported without publishing", async () => {
+    mocks.getCollectionCandidate.mockResolvedValue(DETAIL);
+    const html = renderToStaticMarkup(await DetailPage(detailProps()));
+    expect(html).toContain("登録すると、この候補は「登録済み」になります");
+    expect(html).toContain("公開はされません");
+    expect(html).not.toContain("この候補の状態は変わりません");
+  });
+
+  it("shows an imported candidate as registered with a link to its sale, without re-import", async () => {
+    const saleId = "77777777-7777-4777-8777-777777777777";
+    mocks.getCollectionCandidate.mockResolvedValue({ ...DETAIL, reviewState: "imported", importedSaleEventId: saleId });
+
+    const html = renderToStaticMarkup(await DetailPage(detailProps()));
+
+    expect(html).toContain('data-candidate-imported="true"');
+    expect(html).toContain("登録済み");
+    expect(html).toContain(`href="/admin/sales/${saleId}"`);
+    expect(html).toContain("登録したセールを見る");
+    expect(html).not.toContain("手動登録へ進む");
+    expect(html).not.toMatch(/href="\/admin\/new/);
+  });
+
+  it("offers no registration for a dismissed candidate", async () => {
+    mocks.getCollectionCandidate.mockResolvedValue({ ...DETAIL, reviewState: "dismissed" });
+
+    const html = renderToStaticMarkup(await DetailPage(detailProps()));
+
+    expect(html).toContain('data-candidate-dismissed="true"');
+    expect(html).not.toContain("手動登録へ進む");
+    expect(html).not.toMatch(/href="\/admin\/(new|sales)/);
   });
 
   it("warns when the official source changed after collection", async () => {

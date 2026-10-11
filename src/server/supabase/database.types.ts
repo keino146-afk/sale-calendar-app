@@ -111,6 +111,9 @@ isOneToOne: false
 "current_user_is_admin":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            },
+"import_collection_candidate":
+{ Args: { "p_candidate_id": string,"p_description": string,"p_ends_at": string,"p_is_date_only": boolean,"p_retailer_id": string,"p_source_checked_at": string,"p_source_url": string,"p_starts_at": string,"p_title": string }; Returns: string
+                           },
 "is_allowed_manual_source":
 { Args: { "p_hostname": string,"p_retailer_id": string,"p_source_url": string }; Returns: boolean
                            },

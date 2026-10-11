@@ -30,6 +30,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   checked_at: "情報を確認した日時を正しく入力してください",
   period: "期間を正しく入力してください（終了は開始より後にしてください）",
   duplicate: "同じセールがすでに登録されています",
+  candidate_state: "この収集候補はすでに登録済みか、登録できない状態です",
   failed: "登録できませんでした",
 };
 
@@ -55,18 +56,24 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
   // Optional prefill from a collection candidate. Only the id travels in the
   // URL; the content is looked up here as the admin (RLS). A malformed id is
   // ignored without querying. The values are only starting points: the
-  // submission goes through createSaleCandidateAction's validation as usual,
-  // and the candidate itself is never changed.
+  // submission goes through createSaleCandidateAction's validation, and the
+  // import RPC re-checks everything. Only a candidate that is still new is
+  // offered; an imported or dismissed one cannot be registered again.
   const candidateId = isCandidateId(rawCandidateId) ? rawCandidateId : null;
   let candidate: CollectionCandidateDetail | null = null;
   let candidateUnavailable = false;
+  let candidateClosed = false;
   if (candidateId !== null) {
     try {
       candidate = await getCollectionCandidate(supabase, candidateId);
     } catch (loadError) {
       console.error(`[admin] candidate prefill failed: ${loadError instanceof Error ? loadError.name : "UnknownError"}`);
     }
-    candidateUnavailable = candidate === null;
+    if (candidate !== null && candidate.reviewState !== "new") {
+      candidate = null;
+      candidateClosed = true;
+    }
+    candidateUnavailable = candidate === null && !candidateClosed;
   }
   const defaults: SaleFormDefaults | null =
     candidate === null
@@ -103,6 +110,11 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
       {candidate?.sourceChanged ? (
         <p role="alert" data-source-changed="true" className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
           収集後に公式情報が変更されています。登録前に公式ページを確認してください。
+        </p>
+      ) : null}
+      {candidateClosed ? (
+        <p role="alert" data-candidate-closed="true" className="rounded-2xl bg-red-50 px-4 py-3 text-center text-sm text-red-700">
+          この収集候補はすでに登録済みか、見送り済みです
         </p>
       ) : null}
       {candidateUnavailable ? (

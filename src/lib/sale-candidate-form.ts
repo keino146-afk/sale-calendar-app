@@ -61,10 +61,12 @@ export function isValidTitle(title: string): boolean {
   return length >= 1 && length <= TITLE_MAX_LENGTH;
 }
 
-// Absolute https URL without credentials or an explicit port.
+// Absolute https URL without credentials, an explicit port, whitespace or
+// control characters.
 export function parseSourceUrl(raw: string): string | null {
   const value = raw.trim();
   if (value === "" || value.length > SOURCE_URL_MAX_LENGTH) return null;
+  if (/[\s\p{Cc}]/u.test(value)) return null;
   let url: URL;
   try {
     url = new URL(value);

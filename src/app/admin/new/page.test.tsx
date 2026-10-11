@@ -175,6 +175,7 @@ describe("AdminNewSalePage", () => {
       sourceCheckedAt: "2026-10-02T03:00:00Z", // 12:00 JST
       evidenceExcerpt: "根拠",
       parserVersion: "amazon-rss-1",
+      importedSaleEventId: null,
       retailer: { id: RETAILERS[1].id, slug: "amazon", name: "Amazon" },
     };
 
@@ -261,6 +262,22 @@ describe("AdminNewSalePage", () => {
       const failing = await render({ candidateId: CANDIDATE_ID });
       expect(failing).toContain("収集候補を読み込めませんでした");
       expect(failing).not.toContain("secret_detail");
+    });
+
+    it.each(["imported", "dismissed"])("does not offer a %s candidate for registration", async (reviewState) => {
+      mocks.getCollectionCandidate.mockResolvedValue({ ...CANDIDATE, reviewState });
+      const html = await render({ candidateId: CANDIDATE_ID });
+      expect(html).toContain('data-candidate-closed="true"');
+      expect(html).toContain("この収集候補はすでに登録済みか、見送り済みです");
+      expect(html).not.toContain('name="candidateId"');
+      expect(html).not.toContain("data-prefilled-from-candidate");
+      expect(html).not.toContain("プライム感謝祭");
+    });
+
+    it("shows a fixed message when the import found the candidate already taken", async () => {
+      mocks.getCollectionCandidate.mockResolvedValue(CANDIDATE);
+      const html = await render({ candidateId: CANDIDATE_ID, error: "candidate_state" });
+      expect(html).toContain("この収集候補はすでに登録済みか、登録できない状態です");
     });
 
     it("does not query candidates without a candidate id", async () => {
