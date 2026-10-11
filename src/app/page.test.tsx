@@ -214,11 +214,10 @@ describe("Home", () => {
     expect(listPublishedSaleEvents).not.toHaveBeenCalled();
   });
 
-  it("does not link to the calendar page yet", async () => {
-    listPublishedSaleEvents.mockResolvedValue([ACTIVE_SALE, UPCOMING_SALE]);
-
+  it("links to the calendar page", async () => {
     const html = await renderHome();
 
-    expect(html).not.toContain("/calendar");
+    expect(html).toContain('href="/calendar"');
+    expect(html).toContain("カレンダーを見る");
   });
 });

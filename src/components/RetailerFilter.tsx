@@ -8,22 +8,34 @@ type RetailerOption = {
 type RetailerFilterProps = {
   retailers: readonly RetailerOption[];
   selectedSlug?: string;
+  // Builds the link for a retailer (undefined = all). Defaults to the home page.
+  hrefFor?: (slug: string | undefined) => string;
 };
 
+function homeHref(slug: string | undefined): string {
+  return slug === undefined ? "/" : `/?retailer=${encodeURIComponent(slug)}`;
+}
+
 function linkClass(selected: boolean): string {
+  const base = "block whitespace-nowrap rounded-full px-4 py-1.5 text-sm transition-colors";
   return selected
-    ? "rounded-full border border-foreground bg-foreground px-3 py-1 text-sm text-background"
-    : "rounded-full border border-foreground/30 px-3 py-1 text-sm";
+    ? `${base} bg-blue-500 font-semibold text-white shadow-sm`
+    : `${base} border border-black/10 bg-white text-foreground`;
 }
 
 // Plain links only: changing the filter re-renders the Server Component.
-export function RetailerFilter({ retailers, selectedSlug }: RetailerFilterProps) {
+// Pills scroll horizontally instead of wrapping when space is short.
+export function RetailerFilter({
+  retailers,
+  selectedSlug,
+  hrefFor = homeHref,
+}: RetailerFilterProps) {
   return (
-    <nav aria-label="ショップで絞り込み">
-      <ul className="flex flex-wrap gap-2">
+    <nav aria-label="ショップで絞り込み" className="-mx-4 overflow-x-auto px-4">
+      <ul className="flex w-max gap-2">
         <li>
           <Link
-            href="/"
+            href={hrefFor(undefined)}
             className={linkClass(selectedSlug === undefined)}
             aria-current={selectedSlug === undefined ? "page" : undefined}
           >
@@ -33,7 +45,7 @@ export function RetailerFilter({ retailers, selectedSlug }: RetailerFilterProps)
         {retailers.map((retailer) => (
           <li key={retailer.slug}>
             <Link
-              href={`/?retailer=${encodeURIComponent(retailer.slug)}`}
+              href={hrefFor(retailer.slug)}
               className={linkClass(selectedSlug === retailer.slug)}
               aria-current={selectedSlug === retailer.slug ? "page" : undefined}
             >
