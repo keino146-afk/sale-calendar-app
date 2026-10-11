@@ -5,8 +5,29 @@ import { extractSaleDateRange } from "./date-range";
 
 // Amazon official news feed (www.aboutamazon.jp), offline parts only: the
 // feed is read from a document handed in by an injected Fetcher, so this
-// module performs no network access. Whether the live feed may be collected
-// automatically is a separate decision; the database source stays disabled.
+// module performs no network access.
+
+// Live collection decision (Phase 5D-2): BLOCKED PENDING PERMISSION.
+//
+// The About Amazon Japan news pages link to the Amazon.co.jp conditions of
+// use, which restrict data mining, robots and data gathering or extraction
+// tools unless expressly permitted. No official condition was found that
+// expressly permits this app to retrieve the feed automatically, parse it and
+// generate database candidates from it. The feed being public is not treated
+// as permission. This is a conservative product decision, not a legal
+// conclusion: without confirmed permission, live collection stays off.
+//
+// Live collection may be reconsidered only when one of these is confirmed and
+// recorded, never on a developer's judgment alone:
+//   A. Amazon / About Amazon expressly permits this use;
+//   B. official terms for the About Amazon Japan feed clearly allow automated
+//      retrieval and reuse for this purpose;
+//   C. a formal (e.g. legal) review approves this specific use.
+// Until then: no real Fetcher for this source, no schedule, and the database
+// source stays enabled = false. Admins can still cite About Amazon articles
+// by hand as an approved official source (allow_manual_source), which is a
+// separate permission. live-source-gate.test.ts fails if any of this changes.
+export const AMAZON_NEWS_LIVE_COLLECTION_STATUS = "blocked_pending_permission";
 
 export const AMAZON_NEWS_PARSER_VERSION = "amazon-news-rss-v1";
 
@@ -19,6 +40,8 @@ export const AMAZON_NEWS_SOURCE: SourceDescriptor = {
   parserVersion: AMAZON_NEWS_PARSER_VERSION,
 };
 
+// Identifies the feed the offline parser is written for. Nothing in this
+// repository requests it (see AMAZON_NEWS_LIVE_COLLECTION_STATUS).
 export const AMAZON_NEWS_FEED_URL = "https://www.aboutamazon.jp/rss/feed.rss";
 
 // Conservative v1: only titles that clearly announce a sale. Other news is
