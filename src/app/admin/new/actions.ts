@@ -1,0 +1,39 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { isSameOriginRequest } from "@/server/auth/admin-auth";
+import { requireAdmin } from "@/server/auth/admin-session";
+import { createSaleCandidate, getActiveRetailerForAdmin } from "@/server/data/admin-sale-create";
+import { isOnOfficialDomain, parsePeriodMode, parseSaleCandidateForm } from "@/lib/sale-candidate-form";
+
+// Order: same origin -> admin session -> parse/validate -> active retailer
+// check (server-side) -> insert -> redirect. redirect() throws, so it is never
+// called inside try/catch. Only fixed error codes go into the URL; no user
+// input or database detail does.
+
+export async function createSaleCandidateAction(formData: FormData): Promise<void> {
+  if (!(await isSameOriginRequest())) redirect("/admin");
+  const supabase = await requireAdmin();
+
+  const rawMode = formData.get("mode");
+  const mode = parsePeriodMode(typeof rawMode === "string" ? rawMode : undefined);
+  const back = (error: string) => `/admin/new?mode=${mode}&error=${error}`;
+
+  const parsed = parseSaleCandidateForm(formData, mode);
+  if (!parsed.ok) redirect(back(parsed.error));
+  const input = parsed.value;
+
+  let retailer;
+  try {
+    retailer = await getActiveRetailerForAdmin(supabase, input.retailerId);
+  } catch {
+    retailer = undefined;
+  }
+  if (retailer === undefined) redirect(back("failed"));
+  if (retailer === null) redirect(back("retailer"));
+  if (!isOnOfficialDomain(input.sourceUrl, retailer.officialBaseUrl)) redirect(back("source_domain"));
+
+  const result = await createSaleCandidate(supabase, input);
+  if (!result.ok) redirect(back(result.reason));
+  redirect(`/admin/sales/${result.id}?done=created`);
+}

@@ -69,3 +69,9 @@ export function formatJstFullDate(date: Date): string {
   const { year, month, day } = getJstParts(date);
   return `${year}/${month}/${day}`;
 }
+
+// "2026/11/1 00:30"
+export function formatJstDateTime(date: Date): string {
+  const { year, month, day, hour, minute } = getJstParts(date);
+  return `${year}/${month}/${day} ${pad2(hour)}:${pad2(minute)}`;
+}

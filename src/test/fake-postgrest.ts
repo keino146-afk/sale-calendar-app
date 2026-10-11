@@ -6,6 +6,7 @@ export type RecordedCall = { method: string; args: unknown[] };
 export type FakeResult = {
   data: unknown;
   error: { code?: string; message?: string } | null;
+  count?: number | null;
 };
 
 const CHAIN_METHODS = [
@@ -16,6 +17,8 @@ const CHAIN_METHODS = [
   "order",
   "limit",
   "maybeSingle",
+  "single",
+  "insert",
   "overrideTypes",
 ] as const;
 
