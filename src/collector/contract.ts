@@ -44,8 +44,10 @@ export interface Parser {
   parse(document: FetchedDocument): ParsedCandidate[];
 }
 
+// Returns null when the item is not a candidate at all (e.g. ordinary news
+// in a feed that also announces sales); such items are counted as ignored.
 export interface Normalizer {
-  normalize(candidate: ParsedCandidate): ParsedCandidate;
+  normalize(candidate: ParsedCandidate): ParsedCandidate | null;
 }
 
 export type ValidatedCandidate = Readonly<{

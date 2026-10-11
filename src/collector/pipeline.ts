@@ -19,6 +19,7 @@ export type RunSummary = {
   httpStatus: number | null;
   failure: RunFailure | null;
   discovered: number;
+  ignored: number;
   inserted: number;
   seen: number;
   changed: number;
@@ -44,6 +45,7 @@ export async function runCollection({
     httpStatus: null,
     failure: null,
     discovered: 0,
+    ignored: 0,
     inserted: 0,
     seen: 0,
     changed: 0,
@@ -71,7 +73,12 @@ export async function runCollection({
   summary.discovered = parsed.length;
 
   for (const item of parsed) {
-    const result = validateCandidate(adapter.normalizer.normalize(item), {
+    const normalized = adapter.normalizer.normalize(item);
+    if (normalized === null) {
+      summary.ignored += 1;
+      continue;
+    }
+    const result = validateCandidate(normalized, {
       source: adapter.source,
       checkedAt: document.fetchedAt,
       now: now(),
