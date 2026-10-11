@@ -89,6 +89,16 @@ describe("admin security boundary", () => {
     expect(createCode).not.toMatch(/title_key\s*:|start_date_jst\s*:|published_at\s*:/);
   });
 
+  it("has no unsafe type escapes in application code", async () => {
+    expect(await filesMatching(APP_CODE, /\bas any\b|:\s*any\b|<any>|as unknown as/)).toEqual([]);
+  });
+
+  it("types the admin client with the narrowed insert schema", async () => {
+    const client = await readFile("src/server/supabase/admin-client.ts", "utf8");
+    expect(client).toContain("SupabaseClient<AppDatabase>");
+    expect(client).not.toMatch(/createServerClient<Database>/);
+  });
+
   it("calls only the known RPCs", async () => {
     const allowed = new Set([
       "current_user_is_admin",

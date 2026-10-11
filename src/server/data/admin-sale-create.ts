@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AdminSupabaseClient } from "@/server/supabase/admin-client";
-import type { Database } from "@/server/supabase/database.types";
+import type { SaleEventAppInsert } from "@/server/supabase/app-database";
 import type { SaleCandidateInput } from "@/lib/sale-candidate-form";
 import { DataAccessError } from "./errors";
 
@@ -21,14 +21,6 @@ export type AdminRetailerOption = {
 export type CreateResult = { ok: true; id: string } | { ok: false; reason: "duplicate" | "failed" };
 
 const UNIQUE_VIOLATION = "23505";
-
-type SaleEventInsert = Database["public"]["Tables"]["sale_events"]["Insert"];
-
-// Exactly the columns granted to authenticated for INSERT.
-type SaleCandidateRow = Pick<
-  SaleEventInsert,
-  "retailer_id" | "title" | "description" | "starts_at" | "ends_at" | "is_date_only" | "source_url" | "source_checked_at"
->;
 
 type RetailerRow = { id: string; slug: string; name: string; official_base_url: string };
 
@@ -78,7 +70,7 @@ export async function createSaleCandidate(
   supabase: AdminSupabaseClient,
   input: SaleCandidateInput,
 ): Promise<CreateResult> {
-  const row: SaleCandidateRow = {
+  const row: SaleEventAppInsert = {
     retailer_id: input.retailerId,
     title: input.title,
     description: input.description,
@@ -88,11 +80,11 @@ export async function createSaleCandidate(
     source_url: input.sourceUrl,
     source_checked_at: input.sourceCheckedAt.toISOString(),
   };
-  // The generated Insert type marks title_key / start_date_jst as required,
-  // but a BEFORE INSERT trigger derives them (clients may not write them).
+  // AppDatabase narrows sale_events.Insert to the eight granted columns, so no
+  // cast is needed and any other column fails to compile.
   const { data, error } = await supabase
     .from("sale_events")
-    .insert(row as unknown as SaleEventInsert)
+    .insert(row)
     .select("id")
     .single();
 
