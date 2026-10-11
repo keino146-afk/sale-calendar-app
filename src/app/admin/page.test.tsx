@@ -188,6 +188,13 @@ describe("AdminPage", () => {
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
   });
 
+  it("links to the new sale form", async () => {
+    const html = await render();
+
+    expect(html).toContain('href="/admin/new"');
+    expect(html).toContain("新しいセールを登録");
+  });
+
   it("lists sales in DAL order with status, period, checked date and detail links", async () => {
     mocks.listAdminSaleEvents.mockResolvedValue([PENDING_A, PENDING_B]);
 
@@ -238,7 +245,7 @@ describe("AdminPage", () => {
     expect(html).not.toContain(FAKE_CLIENT.user.id);
     expect(html).not.toContain(FAKE_CLIENT.user.email);
     expect(html).not.toMatch(/eyJ|access_token|refresh_token/);
-    for (const label of ["公開する", "却下する", "終了する", "再開", "新規", "編集"]) {
+    for (const label of ["公開する", "却下する", "終了する", "再開", "編集"]) {
       expect(html).not.toContain(label);
     }
     // The only form is logout.

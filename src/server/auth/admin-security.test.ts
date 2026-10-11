@@ -81,7 +81,22 @@ describe("admin security boundary", () => {
   });
 
   it("never writes tables directly (lifecycle changes go through RPCs)", async () => {
-    expect(await filesMatching(APP_CODE, /\.(insert|upsert|delete)\(/)).toEqual([]);
+    expect(await filesMatching(APP_CODE, /\.(upsert|delete)\(/)).toEqual([]);
+    // The only INSERT is manual candidate creation (status left to the DB default).
+    expect(await filesMatching(APP_CODE, /\.insert\(/)).toEqual(["src/server/data/admin-sale-create.ts"]);
+    const createCode = await readFile("src/server/data/admin-sale-create.ts", "utf8");
+    expect(createCode).not.toMatch(/\bstatus\s*:/);
+    expect(createCode).not.toMatch(/title_key\s*:|start_date_jst\s*:|published_at\s*:/);
+  });
+
+  it("has no unsafe type escapes in application code", async () => {
+    expect(await filesMatching(APP_CODE, /\bas any\b|:\s*any\b|<any>|as unknown as/)).toEqual([]);
+  });
+
+  it("types the admin client with the narrowed insert schema", async () => {
+    const client = await readFile("src/server/supabase/admin-client.ts", "utf8");
+    expect(client).toContain("SupabaseClient<AppDatabase>");
+    expect(client).not.toMatch(/createServerClient<Database>/);
   });
 
   it("calls only the known RPCs", async () => {
@@ -102,11 +117,14 @@ describe("admin security boundary", () => {
     expect(used.has("publish_sale_event")).toBe(true);
   });
 
-  it("checks Origin and the admin session in every sale lifecycle action file", async () => {
+  it("checks Origin and the admin session in every admin data action file", async () => {
     const actionFiles = APP_CODE.filter(
-      (file) => file.startsWith("src/app/admin/sales/") && file.endsWith("actions.ts"),
+      (file) =>
+        file.startsWith("src/app/admin/") && file.endsWith("actions.ts") && file !== "src/app/admin/actions.ts",
     );
-    expect(actionFiles.length).toBeGreaterThan(0);
+    expect(actionFiles).toEqual(
+      expect.arrayContaining(["src/app/admin/new/actions.ts", "src/app/admin/sales/[saleId]/actions.ts"]),
+    );
     for (const file of actionFiles) {
       const code = await readFile(file, "utf8");
       expect(code).toMatch(/^"use server";/);

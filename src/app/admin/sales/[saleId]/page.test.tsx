@@ -263,6 +263,7 @@ describe("AdminSaleDetailPage", () => {
   });
 
   it.each([
+    ["created", "登録しました"],
     ["published", "公開しました"],
     ["rejected", "却下しました"],
     ["archived", "終了しました"],

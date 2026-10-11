@@ -17,6 +17,8 @@ const CHAIN_METHODS = [
   "order",
   "limit",
   "maybeSingle",
+  "single",
+  "insert",
   "overrideTypes",
 ] as const;
 

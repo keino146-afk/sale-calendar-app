@@ -60,6 +60,12 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
               {pendingCount}件
             </span>
           </section>
+          <Link
+            href="/admin/new"
+            className="rounded-2xl bg-blue-500 px-4 py-3 text-center text-[15px] font-semibold text-white shadow-sm"
+          >
+            新しいセールを登録
+          </Link>
           <nav aria-label="状態で絞り込み" className="-mx-4 overflow-x-auto px-4">
             <ul className="flex w-max gap-2">
               {ADMIN_SALE_STATUSES.map((value) => (

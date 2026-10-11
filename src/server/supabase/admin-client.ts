@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabasePublicEnv } from "@/server/env";
-import type { Database } from "./database.types";
+import type { AppDatabase } from "./app-database";
 
 // Cookie-based Supabase client for the admin area only. It uses the
 // publishable key (never service_role) and acts as the signed-in user, so
@@ -13,7 +13,7 @@ import type { Database } from "./database.types";
 // There is no browser client: the auth cookies are HttpOnly and scoped to
 // /admin, so public pages never receive them.
 
-export type AdminSupabaseClient = SupabaseClient<Database>;
+export type AdminSupabaseClient = SupabaseClient<AppDatabase>;
 
 export const ADMIN_COOKIE_PATH = "/admin";
 
@@ -36,7 +36,7 @@ function noStoreFetch(input: RequestInfo | URL, init?: RequestInit) {
 export async function createAdminSupabaseClient(): Promise<AdminSupabaseClient> {
   const { url, publishableKey } = getSupabasePublicEnv();
   const cookieStore = await cookies();
-  return createServerClient<Database>(url, publishableKey, {
+  return createServerClient<AppDatabase>(url, publishableKey, {
     cookieOptions: adminCookieOptions(),
     cookies: {
       getAll: () => cookieStore.getAll(),
@@ -62,7 +62,7 @@ export function createAdminProxyClient(request: NextRequest): {
 } {
   const { url, publishableKey } = getSupabasePublicEnv();
   let response = NextResponse.next({ request });
-  const supabase = createServerClient<Database>(url, publishableKey, {
+  const supabase = createServerClient<AppDatabase>(url, publishableKey, {
     cookieOptions: adminCookieOptions(),
     cookies: {
       getAll: () => request.cookies.getAll(),
