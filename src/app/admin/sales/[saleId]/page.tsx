@@ -3,23 +3,46 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import type { ReactNode } from "react";
 import { StatusBadge } from "../../_components/StatusBadge";
+import { archiveSaleAction, publishSaleAction, reopenSaleAction } from "./actions";
 import { requireAdmin } from "@/server/auth/admin-session";
-import { getAdminSaleEvent, type AdminSaleEventDto } from "@/server/data/admin-sale-events";
+import {
+  getAdminSaleEvent,
+  getLatestRejectReason,
+  type AdminSaleEventDto,
+} from "@/server/data/admin-sale-events";
 import { formatJstDateTime } from "@/lib/jst";
 import { formatSalePeriod } from "@/lib/sale-display";
 
-type LoadResult = { ok: true; sale: AdminSaleEventDto | null } | { ok: false };
+type LoadResult =
+  | { ok: true; sale: AdminSaleEventDto | null; rejectReason: string | null }
+  | { ok: false };
 
-export default async function AdminSaleDetailPage({ params }: PageProps<"/admin/sales/[saleId]">) {
+// Only these fixed messages can be shown; query values are never echoed.
+const DONE_MESSAGES: Record<string, string> = {
+  published: "公開しました",
+  rejected: "却下しました",
+  archived: "終了しました",
+  reopened: "確認待ちに戻しました",
+};
+
+export default async function AdminSaleDetailPage({
+  params,
+  searchParams,
+}: PageProps<"/admin/sales/[saleId]">) {
   // connection(), requireAdmin() and notFound() all work by throwing and
   // must stay outside try/catch.
   await connection();
   const supabase = await requireAdmin();
   const { saleId } = await params;
+  const { done, error } = await searchParams;
+  const doneMessage = typeof done === "string" && Object.hasOwn(DONE_MESSAGES, done) ? DONE_MESSAGES[done] : null;
 
   let result: LoadResult;
   try {
-    result = { ok: true, sale: await getAdminSaleEvent(supabase, saleId) };
+    const sale = await getAdminSaleEvent(supabase, saleId);
+    // The audit log is read only for rejected sales.
+    const rejectReason = sale?.status === "rejected" ? await getLatestRejectReason(supabase, sale.id) : null;
+    result = { ok: true, sale, rejectReason };
   } catch (error) {
     console.error(`[admin] sale detail failed: ${error instanceof Error ? error.name : "UnknownError"}`);
     result = { ok: false };
@@ -35,7 +58,7 @@ export default async function AdminSaleDetailPage({ params }: PageProps<"/admin/
     );
   }
 
-  const { sale } = result;
+  const { sale, rejectReason } = result;
   if (sale === null) notFound();
 
   const rows: { label: string; value: ReactNode }[] = [
@@ -62,6 +85,16 @@ export default async function AdminSaleDetailPage({ params }: PageProps<"/admin/
 
   return (
     <Shell>
+      {doneMessage !== null ? (
+        <p role="status" className="rounded-2xl bg-emerald-50 px-4 py-3 text-center text-sm text-emerald-800">
+          {doneMessage}
+        </p>
+      ) : null}
+      {error !== undefined ? (
+        <p role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-center text-sm text-red-700">
+          操作を完了できませんでした
+        </p>
+      ) : null}
       <article className="flex flex-col gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
         <h2 className="text-xl font-bold">{sale.title}</h2>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
@@ -78,6 +111,12 @@ export default async function AdminSaleDetailPage({ params }: PageProps<"/admin/
             <p className="whitespace-pre-wrap text-sm">{sale.description}</p>
           </section>
         ) : null}
+        {sale.status === "rejected" ? (
+          <section className="flex flex-col gap-1 rounded-xl bg-slate-50 p-3">
+            <h3 className="text-sm text-foreground/60">却下理由</h3>
+            <p className="whitespace-pre-wrap text-sm">{rejectReason ?? "記録がありません"}</p>
+          </section>
+        ) : null}
         <section className="flex flex-col gap-1">
           <a
             href={sale.sourceUrl}
@@ -90,7 +129,60 @@ export default async function AdminSaleDetailPage({ params }: PageProps<"/admin/
           <p className="break-all text-xs text-foreground/50">{sale.sourceUrl}</p>
         </section>
       </article>
+      <LifecycleActions sale={sale} />
     </Shell>
+  );
+}
+
+function ActionButton({
+  action,
+  saleId,
+  label,
+  tone,
+}: {
+  action: (formData: FormData) => Promise<void>;
+  saleId: string;
+  label: string;
+  tone: "primary" | "danger" | "neutral";
+}) {
+  const toneClass = {
+    primary: "bg-blue-500 text-white",
+    danger: "border border-red-300 bg-white text-red-600",
+    neutral: "border border-black/10 bg-white",
+  }[tone];
+  return (
+    <form action={action}>
+      <input type="hidden" name="saleId" value={saleId} />
+      <button type="submit" className={`w-full rounded-xl px-4 py-2.5 text-[15px] font-semibold ${toneClass}`}>
+        {label}
+      </button>
+    </form>
+  );
+}
+
+// Only the transitions the RPCs allow for the current status are offered.
+function LifecycleActions({ sale }: { sale: AdminSaleEventDto }) {
+  if (sale.status === "archived") return null;
+  return (
+    <section aria-label="操作" className="flex flex-col gap-2">
+      {sale.status === "pending_review" ? (
+        <>
+          <ActionButton action={publishSaleAction} saleId={sale.id} label="公開する" tone="primary" />
+          <Link
+            href={`/admin/sales/${sale.id}/reject`}
+            className="w-full rounded-xl border border-red-300 bg-white px-4 py-2.5 text-center text-[15px] font-semibold text-red-600"
+          >
+            却下する
+          </Link>
+        </>
+      ) : null}
+      {sale.status === "published" ? (
+        <ActionButton action={archiveSaleAction} saleId={sale.id} label="終了する" tone="danger" />
+      ) : null}
+      {sale.status === "rejected" ? (
+        <ActionButton action={reopenSaleAction} saleId={sale.id} label="確認待ちに戻す" tone="neutral" />
+      ) : null}
+    </section>
   );
 }
 

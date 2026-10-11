@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeSupabase, type FakeResult } from "@/test/fake-postgrest";
 
-const { listAdminSaleEvents, countPendingSaleEvents, getAdminSaleEvent, ADMIN_LIST_LIMIT } =
+const { listAdminSaleEvents, countPendingSaleEvents, getAdminSaleEvent, getLatestRejectReason, ADMIN_LIST_LIMIT } =
   await import("./admin-sale-events");
 const { DataAccessError } = await import("./errors");
 
@@ -184,6 +184,41 @@ describe("getAdminSaleEvent", () => {
   it("throws a generic error on failure", async () => {
     await expect(
       getAdminSaleEvent(client(fake({ data: null, error: { code: "PGRST000" } })), SALE_ID),
+    ).rejects.toBeInstanceOf(DataAccessError);
+  });
+});
+
+describe("getLatestRejectReason", () => {
+  it("reads only the note of the newest reject audit entry", async () => {
+    const f = fake({ data: { note: "期間が誤り" }, error: null });
+
+    expect(await getLatestRejectReason(client(f), SALE_ID)).toBe("期間が誤り");
+    expect(f.tables).toEqual(["sale_event_audit"]);
+    expect(f.calls).toEqual([
+      { method: "select", args: ["note"] },
+      { method: "eq", args: ["sale_event_id", SALE_ID] },
+      { method: "eq", args: ["action", "reject"] },
+      { method: "order", args: ["created_at", { ascending: false }] },
+      { method: "order", args: ["id", { ascending: false }] },
+      { method: "limit", args: [1] },
+      { method: "maybeSingle", args: [] },
+      { method: "overrideTypes", args: [] },
+    ]);
+  });
+
+  it("returns null when there is no reject entry", async () => {
+    expect(await getLatestRejectReason(client(fake({ data: null, error: null })), SALE_ID)).toBeNull();
+  });
+
+  it("does not query for a malformed id", async () => {
+    const f = fake({ data: { note: "x" }, error: null });
+    expect(await getLatestRejectReason(client(f), "nope")).toBeNull();
+    expect(f.tables).toEqual([]);
+  });
+
+  it("throws a generic error on failure", async () => {
+    await expect(
+      getLatestRejectReason(client(fake({ data: null, error: { code: "42501" } })), SALE_ID),
     ).rejects.toBeInstanceOf(DataAccessError);
   });
 });

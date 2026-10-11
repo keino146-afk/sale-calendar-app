@@ -80,6 +80,42 @@ describe("admin security boundary", () => {
     expect(await filesMatching(APP_CODE, /\.update\(|status\s*:\s*["']published/)).toEqual([]);
   });
 
+  it("never writes tables directly (lifecycle changes go through RPCs)", async () => {
+    expect(await filesMatching(APP_CODE, /\.(insert|upsert|delete)\(/)).toEqual([]);
+  });
+
+  it("calls only the known RPCs", async () => {
+    const allowed = new Set([
+      "current_user_is_admin",
+      "publish_sale_event",
+      "reject_sale_event",
+      "archive_sale_event",
+      "reopen_sale_event",
+    ]);
+    const used = new Set<string>();
+    for (const file of APP_CODE) {
+      for (const [, name] of (await readFile(file, "utf8")).matchAll(/\.rpc\(\s*["']([a-z_]+)["']/g)) {
+        used.add(name);
+      }
+    }
+    expect([...used].filter((name) => !allowed.has(name))).toEqual([]);
+    expect(used.has("publish_sale_event")).toBe(true);
+  });
+
+  it("checks Origin and the admin session in every sale lifecycle action file", async () => {
+    const actionFiles = APP_CODE.filter(
+      (file) => file.startsWith("src/app/admin/sales/") && file.endsWith("actions.ts"),
+    );
+    expect(actionFiles.length).toBeGreaterThan(0);
+    for (const file of actionFiles) {
+      const code = await readFile(file, "utf8");
+      expect(code).toMatch(/^"use server";/);
+      expect(code).toContain("isSameOriginRequest()");
+      expect(code).toContain("requireAdmin()");
+      expect(code.indexOf("isSameOriginRequest()")).toBeLessThan(code.indexOf("requireAdmin()"));
+    }
+  });
+
   it("keeps public pages free of admin session code", async () => {
     const publicPages = APP_CODE.filter(
       (file) => file.startsWith("src/app/") && !file.startsWith("src/app/admin/"),
