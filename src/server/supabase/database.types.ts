@@ -82,6 +82,9 @@ isOneToOne: false
             "archive_sale_event":
 { Args: { "p_id": string }; Returns: undefined
                            },
+"current_user_is_admin":
+{ Args: Record<PropertyKey, never>; Returns: boolean
+                           },
 "publish_sale_event":
 { Args: { "p_id": string }; Returns: undefined
                            },
