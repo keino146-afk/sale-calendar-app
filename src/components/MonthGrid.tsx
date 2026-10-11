@@ -23,24 +23,26 @@ function weekdayTextClass(weekday: number): string {
   return "text-foreground/70";
 }
 
-// Each week is a 7-column grid: row 1 holds the day numbers, rows 2-3 the
-// sale bars (two lanes), row 4 the "+n" overflow. Every day is a link that
-// selects it; bars are decorative overlays that let taps fall through.
+// Each week is a compact 7-column grid: row 1 holds the day numbers (with a
+// small "+n" overflow badge), rows 2-3 the sale bars (two lanes). Every day
+// is a link that selects it; bars are decorative overlays that let taps fall
+// through.
 export function MonthGrid({ weeks, selectedKey, dayHref }: MonthGridProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <div className="grid grid-cols-7 text-center text-[11px] font-medium">
+    <div className="flex flex-col gap-0.5">
+      <div className="grid grid-cols-7 pb-0.5 text-center text-[11px] font-medium">
         {WEEKDAY_LABELS.map((label, weekday) => (
           <div key={label} className={weekdayTextClass(weekday)}>
             {label}
           </div>
         ))}
       </div>
-      <ol className="flex flex-col divide-y divide-black/5">
+      <ol className="flex flex-col divide-y divide-black/[0.04]">
         {weeks.map((week) => (
           <li
             key={week.days[0].key}
-            className="relative grid grid-cols-7 grid-rows-[2rem_1.125rem_1.125rem_0.875rem] gap-y-0.5 py-1"
+            data-week-start={week.days[0].key}
+            className="relative grid grid-cols-7 grid-rows-[1.625rem_0.75rem_0.75rem] gap-y-px py-0.5"
           >
             {week.days.map((day, column) => {
               const count =
@@ -57,11 +59,13 @@ export function MonthGrid({ weeks, selectedKey, dayHref }: MonthGridProps) {
               ]
                 .filter((part) => part !== null)
                 .join("、");
+              // Today keeps the filled blue circle; another selected day only
+              // gets a pale circle around its number.
               const numberClass = day.isToday
                 ? "bg-blue-500 font-semibold text-white"
-                : day.inMonth
-                  ? weekdayTextClass(day.weekday)
-                  : "text-slate-300";
+                : `${day.inMonth ? weekdayTextClass(day.weekday) : "text-slate-300"} ${
+                    isSelected ? "bg-blue-50 font-semibold ring-1 ring-blue-300" : ""
+                  }`;
               return (
                 <Link
                   key={day.key}
@@ -73,12 +77,10 @@ export function MonthGrid({ weeks, selectedKey, dayHref }: MonthGridProps) {
                   data-in-month={day.inMonth ? "true" : "false"}
                   data-selected={isSelected ? "true" : "false"}
                   style={{ gridColumn: column + 1, gridRow: "1 / -1" }}
-                  className={`flex justify-center rounded-xl pt-1 ${
-                    isSelected && !day.isToday ? "bg-blue-50 ring-1 ring-blue-200" : ""
-                  } ${isSelected && day.isToday ? "bg-blue-50" : ""}`}
+                  className="flex justify-center"
                 >
                   <span
-                    className={`flex h-7 w-7 items-center justify-center rounded-full text-sm ${numberClass}`}
+                    className={`flex h-6 w-6 items-center justify-center rounded-full text-[13px] ${numberClass}`}
                   >
                     {day.day}
                   </span>
@@ -97,7 +99,7 @@ export function MonthGrid({ weeks, selectedKey, dayHref }: MonthGridProps) {
                   gridColumn: `${segment.startColumn + 1} / span ${segment.span}`,
                   gridRow: segment.lane + 2,
                 }}
-                className={`pointer-events-none z-10 truncate px-1.5 text-[10px] font-medium leading-[1.125rem] ${
+                className={`pointer-events-none z-10 truncate px-1 text-[9px] font-medium leading-3 ${
                   retailerTone(segment.event.retailerSlug).bar
                 } ${segment.continuesBefore ? "rounded-l-none" : "ml-0.5 rounded-l-full"} ${
                   segment.continuesAfter ? "rounded-r-none" : "mr-0.5 rounded-r-full"
@@ -112,8 +114,8 @@ export function MonthGrid({ weeks, selectedKey, dayHref }: MonthGridProps) {
                   key={`more-${week.days[column].key}`}
                   aria-hidden="true"
                   data-more-date={week.days[column].key}
-                  style={{ gridColumn: column + 1, gridRow: 4 }}
-                  className="pointer-events-none z-10 text-center text-[9px] leading-[0.875rem] text-foreground/60"
+                  style={{ gridColumn: column + 1, gridRow: 1 }}
+                  className="pointer-events-none z-10 self-start justify-self-end pr-0.5 text-[9px] leading-3 text-foreground/60"
                 >
                   +{hidden}
                 </span>

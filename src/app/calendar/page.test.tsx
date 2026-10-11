@@ -225,6 +225,25 @@ describe("CalendarPage", () => {
     expect(cellHtml(html, "2026-10-10")).toContain("今日");
   });
 
+  it("renders six week rows of seven days and marks only the selected day", async () => {
+    const html = await renderCalendar({ year: "2026", month: "10", day: "2026-10-21" });
+
+    const weekStarts = [...html.matchAll(/data-week-start="([^"]+)"/g)].map(([, key]) => key);
+    expect(weekStarts).toEqual([
+      "2026-09-27",
+      "2026-10-04",
+      "2026-10-11",
+      "2026-10-18",
+      "2026-10-25",
+      "2026-11-01",
+    ]);
+    expect(html.match(/data-selected="true"/g)).toHaveLength(1);
+    expect(cellHtml(html, "2026-10-21")).toContain("選択中");
+    // Today stays marked separately from the selection.
+    expect(cellHtml(html, "2026-10-10")).toContain('aria-current="date"');
+    expect(cellHtml(html, "2026-10-10")).not.toContain("選択中");
+  });
+
   it("links month navigation with labels, keeping the selected retailer", async () => {
     const all = await renderCalendar({ year: "2026", month: "1" });
     expect(all).toContain('aria-label="前の月"');

@@ -49,7 +49,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 pb-12 pt-4">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3 px-4 pb-12 pt-3">
       <header className="grid grid-cols-[1fr_auto_1fr] items-center">
         <Link
           href="/"
@@ -141,7 +141,7 @@ function CalendarContent({
       />
       <section
         aria-label="月間カレンダー"
-        className="flex flex-col gap-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5"
+        className="flex flex-col gap-1.5 rounded-2xl bg-white px-2 pb-2 pt-1.5 shadow-sm ring-1 ring-black/5"
       >
         <nav aria-label="月の切り替え" className="flex items-center justify-between px-1">
           <MonthLink
@@ -151,7 +151,7 @@ function CalendarContent({
           >
             <ChevronIcon direction="left" />
           </MonthLink>
-          <h2 className="text-lg font-semibold">
+          <h2 className="text-base font-semibold">
             {yearMonth.year}年{yearMonth.month}月
           </h2>
           <MonthLink
@@ -168,9 +168,9 @@ function CalendarContent({
           dayHref={(dayKey) => calendarHref(yearMonth, selectedRetailerSlug, dayKey)}
         />
       </section>
-      <section aria-labelledby="selected-day-heading" className="flex flex-col gap-3">
+      <section aria-labelledby="selected-day-heading" className="flex flex-col gap-2 pt-1">
         <div className="flex items-baseline justify-between px-1">
-          <h2 id="selected-day-heading" className="text-xl font-bold">
+          <h2 id="selected-day-heading" className="text-lg font-bold">
             {formatDayHeading(selectedDay)}
           </h2>
           <span className="text-sm text-foreground/60">{selectedEvents.length}件のセール</span>
@@ -201,7 +201,7 @@ function MonthLink({
   label: string;
   children: ReactNode;
 }) {
-  const className = "flex h-9 w-9 items-center justify-center rounded-full";
+  const className = "flex h-8 w-8 items-center justify-center rounded-full";
   if (target === null) {
     return (
       <span aria-label={label} aria-disabled="true" className={`${className} text-slate-300`}>
