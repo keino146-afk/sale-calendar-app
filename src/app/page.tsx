@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { connection } from "next/server";
 import { RetailerFilter } from "@/components/RetailerFilter";
 import { SaleList, type SaleListItem } from "@/components/SaleList";
@@ -15,6 +16,7 @@ function toListItem(sale: SaleEventDto, now: Date): SaleListItem {
   return {
     id: sale.id,
     title: sale.title,
+    retailerSlug: sale.retailer.slug,
     retailerName: sale.retailer.name,
     period: formatSalePeriod(sale),
     isActive: isSaleActive(sale, now),
@@ -51,10 +53,22 @@ export default async function Home({ searchParams }: PageProps<"/">) {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 py-10">
-      <h1 className="text-2xl font-semibold">セールカレンダー</h1>
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-4 pb-12 pt-6">
+      <header className="flex flex-col items-center gap-1 text-center">
+        <h1 className="text-2xl font-bold">セールカレンダー</h1>
+        <p className="text-xs text-foreground/60">楽天市場・Amazon・Qoo10のセール情報</p>
+      </header>
+      <Link
+        href="/calendar"
+        className="flex items-center justify-center gap-2 rounded-2xl bg-blue-500 px-4 py-3 text-[15px] font-semibold text-white shadow-sm active:bg-blue-600"
+      >
+        カレンダーを見る
+        <span aria-hidden="true">›</span>
+      </Link>
       {retailers === null || sales === null ? (
-        <p>セール情報を読み込めませんでした</p>
+        <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm shadow-sm">
+          セール情報を読み込めませんでした
+        </p>
       ) : (
         <>
           <RetailerFilter retailers={retailers} selectedSlug={selectedRetailerSlug} />
@@ -69,15 +83,21 @@ function HomeSections({ sales, now }: { sales: SaleEventDto[]; now: Date }) {
   const { active, upcoming } = classifySales(sales, now);
   return (
     <>
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">開催中</h2>
+      <section className="flex flex-col gap-2.5">
+        <h2 className="flex items-center gap-2 px-1 text-lg font-bold">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-red-500" />
+          開催中
+        </h2>
         <SaleList
           items={active.map((sale) => toListItem(sale, now))}
           emptyText="現在開催中のセールはありません"
         />
       </section>
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">近日開催</h2>
+      <section className="flex flex-col gap-2.5">
+        <h2 className="flex items-center gap-2 px-1 text-lg font-bold">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-blue-500" />
+          近日開催
+        </h2>
         <SaleList
           items={upcoming.map((sale) => toListItem(sale, now))}
           emptyText="近日開催予定のセールはありません"
