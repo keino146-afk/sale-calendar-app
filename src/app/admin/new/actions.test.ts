@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     requireAdmin: vi.fn(),
     getActiveRetailerForAdmin: vi.fn(),
     createSaleCandidate: vi.fn(),
+    rpc: vi.fn(),
     redirect: vi.fn((url: string) => {
       throw new RedirectSentinel(url);
     }),
@@ -28,10 +29,26 @@ vi.mock("@/server/data/admin-sale-create", () => ({
 
 const { createSaleCandidateAction } = await import("./actions");
 
-const CLIENT = { fake: "admin client" };
+const CLIENT = { fake: "admin client", rpc: mocks.rpc };
 const RETAILER_ID = "11111111-1111-4111-8111-111111111111";
+const AMAZON_ID = "22222222-2222-4222-8222-222222222222";
+const QOO10_ID = "33333333-3333-4333-8333-333333333333";
 const NEW_ID = "44444444-4444-4444-8444-444444444444";
 const RETAILER = { id: RETAILER_ID, slug: "rakuten", name: "楽天市場", officialBaseUrl: "https://www.rakuten.co.jp/" };
+const AMAZON = { id: AMAZON_ID, slug: "amazon", name: "Amazon", officialBaseUrl: "https://www.amazon.co.jp/" };
+const QOO10 = { id: QOO10_ID, slug: "qoo10", name: "Qoo10", officialBaseUrl: "https://www.qoo10.jp/" };
+const ABOUTAMAZON_ARTICLE = "https://www.aboutamazon.jp/news/amazon-prime/prime-appreciation-sale-2026";
+
+// Stand-in for public.is_allowed_manual_source with the seeded Amazon policy
+// (the real function is covered by the pgTAP tests).
+function policyRpc(name: string, args: { p_retailer_id: string; p_hostname: string; p_source_url: string }) {
+  expect(name).toBe("is_allowed_manual_source");
+  const allowed =
+    args.p_retailer_id === AMAZON_ID &&
+    args.p_hostname === "www.aboutamazon.jp" &&
+    /^https:\/\/www\.aboutamazon\.jp\/news\/[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/.test(args.p_source_url);
+  return Promise.resolve({ data: allowed, error: null });
+}
 
 const VALID = {
   mode: "date",
@@ -65,6 +82,7 @@ beforeEach(() => {
   mocks.requireAdmin.mockResolvedValue(CLIENT);
   mocks.getActiveRetailerForAdmin.mockResolvedValue(RETAILER);
   mocks.createSaleCandidate.mockResolvedValue({ ok: true, id: NEW_ID });
+  mocks.rpc.mockImplementation(policyRpc);
 });
 
 afterEach(() => {
@@ -73,6 +91,7 @@ afterEach(() => {
     mocks.requireAdmin,
     mocks.getActiveRetailerForAdmin,
     mocks.createSaleCandidate,
+    mocks.rpc,
   ]) {
     mock.mockReset();
   }
@@ -221,5 +240,93 @@ describe("createSaleCandidateAction", () => {
     expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, candidateId, sourceUrl: "https://evil.example/" })))).toBe(
       `/admin/new?mode=date&candidateId=${candidateId}&error=source_domain`,
     );
+  });
+});
+
+describe("createSaleCandidateAction source policy", () => {
+  const amazon = (sourceUrl: string, extra: Record<string, string> = {}) => {
+    mocks.getActiveRetailerForAdmin.mockResolvedValue(AMAZON);
+    return redirectUrl(createSaleCandidateAction(form({ ...VALID, retailerId: AMAZON_ID, sourceUrl, ...extra })));
+  };
+
+  it("accepts Amazon's own domain without a policy lookup", async () => {
+    expect(await amazon("https://www.amazon.co.jp/fmc/prime-day")).toBe(`/admin/sales/${NEW_ID}?done=created`);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("accepts an approved aboutamazon.jp article for Amazon", async () => {
+    expect(await amazon(ABOUTAMAZON_ARTICLE)).toBe(`/admin/sales/${NEW_ID}?done=created`);
+    expect(mocks.rpc).toHaveBeenCalledWith("is_allowed_manual_source", {
+      p_retailer_id: AMAZON_ID,
+      p_hostname: "www.aboutamazon.jp",
+      p_source_url: ABOUTAMAZON_ARTICLE,
+    });
+    expect(mocks.createSaleCandidate.mock.calls[0][1]).toMatchObject({ sourceUrl: ABOUTAMAZON_ARTICLE });
+  });
+
+  it.each([
+    ["lookalike domain", "https://evil-aboutamazon.jp/news/amazon-prime/prime-appreciation-sale-2026"],
+    ["evil suffix", "https://www.aboutamazon.jp.evil.example/news/amazon-prime/prime-appreciation-sale-2026"],
+    ["other subdomain", "https://news.aboutamazon.jp/news/amazon-prime/prime-appreciation-sale-2026"],
+    ["path outside the policy", "https://www.aboutamazon.jp/rss/feed.rss"],
+  ])("rejects an Amazon %s", async (_label, sourceUrl) => {
+    expect(await amazon(sourceUrl)).toBe("/admin/new?mode=date&error=source_domain");
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Rakuten", RETAILER],
+    ["Qoo10", QOO10],
+  ])("rejects an aboutamazon.jp article for %s", async (_label, retailer) => {
+    mocks.getActiveRetailerForAdmin.mockResolvedValue(retailer);
+    expect(
+      await redirectUrl(createSaleCandidateAction(form({ ...VALID, retailerId: retailer.id, sourceUrl: ABOUTAMAZON_ARTICLE }))),
+    ).toBe("/admin/new?mode=date&error=source_domain");
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["http", "http://www.aboutamazon.jp/news/amazon-prime/prime-appreciation-sale-2026"],
+    ["credentials", "https://user:pass@www.aboutamazon.jp/news/amazon-prime/prime-appreciation-sale-2026"],
+    ["port", "https://www.aboutamazon.jp:8443/news/amazon-prime/prime-appreciation-sale-2026"],
+    ["default port", "https://www.aboutamazon.jp:443/news/amazon-prime/prime-appreciation-sale-2026"],
+    ["port on the primary domain", "https://www.amazon.co.jp:8443/"],
+  ])("rejects a URL with %s before any policy lookup", async (_label, sourceUrl) => {
+    expect(await amazon(sourceUrl)).toBe("/admin/new?mode=date&error=source_url");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the policy check errors", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST000" } });
+    expect(await amazon(ABOUTAMAZON_ARTICLE)).toBe("/admin/new?mode=date&error=failed");
+    mocks.rpc.mockRejectedValue(new Error("network"));
+    expect(await amazon(ABOUTAMAZON_ARTICLE)).toBe("/admin/new?mode=date&error=failed");
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+    expect(await amazon(ABOUTAMAZON_ARTICLE)).toBe("/admin/new?mode=date&error=source_domain");
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+
+  it("checks the policy after the retailer and before the insert", async () => {
+    const order: string[] = [];
+    mocks.getActiveRetailerForAdmin.mockImplementation(async () => (order.push("retailer"), AMAZON));
+    mocks.rpc.mockImplementation(async (...args: Parameters<typeof policyRpc>) => (order.push("policy"), policyRpc(...args)));
+    mocks.createSaleCandidate.mockImplementation(async () => (order.push("insert"), { ok: true, id: NEW_ID }));
+
+    await redirectUrl(createSaleCandidateAction(form({ ...VALID, retailerId: AMAZON_ID, sourceUrl: ABOUTAMAZON_ARTICLE })));
+
+    expect(order).toEqual(["retailer", "policy", "insert"]);
+  });
+
+  it("validates a candidate-prefilled aboutamazon.jp URL on submit", async () => {
+    const candidateId = "55555555-5555-4555-8555-555555555555";
+    expect(await amazon(ABOUTAMAZON_ARTICLE, { candidateId })).toBe(`/admin/sales/${NEW_ID}?done=created`);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+
+    mocks.createSaleCandidate.mockClear();
+    expect(await amazon("https://www.aboutamazon.jp.evil.example/news/a/b", { candidateId })).toBe(
+      `/admin/new?mode=date&candidateId=${candidateId}&error=source_domain`,
+    );
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
   });
 });

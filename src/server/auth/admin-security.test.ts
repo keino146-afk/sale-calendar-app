@@ -107,6 +107,7 @@ describe("admin security boundary", () => {
   it("calls only the known RPCs", async () => {
     const allowed = new Set([
       "current_user_is_admin",
+      "is_allowed_manual_source",
       "publish_sale_event",
       "reject_sale_event",
       "archive_sale_event",
@@ -148,6 +149,14 @@ describe("admin security boundary", () => {
     expect(reader).not.toMatch(/\.(insert|update|upsert|delete|rpc)\(/);
     // The collector write RPC is never used by the web app.
     expect(await filesMatching(APP_CODE, /submit_collection_candidate/)).toEqual([
+      "src/server/supabase/database.types.ts",
+    ]);
+  });
+
+  it("never reads source policies directly (database check only)", async () => {
+    expect(await filesMatching(APP_CODE, /collection_sources|collector_users/)).toEqual([]);
+    expect(await filesMatching(APP_CODE, /is_allowed_manual_source/)).toEqual([
+      "src/server/data/admin-source-policy.ts",
       "src/server/supabase/database.types.ts",
     ]);
   });
