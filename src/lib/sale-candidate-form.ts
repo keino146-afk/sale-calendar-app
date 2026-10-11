@@ -61,7 +61,7 @@ export function isValidTitle(title: string): boolean {
   return length >= 1 && length <= TITLE_MAX_LENGTH;
 }
 
-// Absolute https URL without credentials, as the database requires.
+// Absolute https URL without credentials or an explicit port.
 export function parseSourceUrl(raw: string): string | null {
   const value = raw.trim();
   if (value === "" || value.length > SOURCE_URL_MAX_LENGTH) return null;
@@ -73,6 +73,8 @@ export function parseSourceUrl(raw: string): string | null {
   }
   if (url.protocol !== "https:" || url.username !== "" || url.password !== "") return null;
   if (!value.toLowerCase().startsWith("https://")) return null;
+  // URL drops a default ":443", so also look at the authority as written.
+  if (url.port !== "" || /^https:\/\/[^/?#]*:/i.test(value)) return null;
   return value;
 }
 

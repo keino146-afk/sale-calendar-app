@@ -111,6 +111,9 @@ isOneToOne: false
 "current_user_is_admin":
 { Args: Record<PropertyKey, never>; Returns: boolean
                            },
+"is_allowed_manual_source":
+{ Args: { "p_hostname": string,"p_retailer_id": string,"p_source_url": string }; Returns: boolean
+                           },
 "publish_sale_event":
 { Args: { "p_id": string }; Returns: undefined
                            },

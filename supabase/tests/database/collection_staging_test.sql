@@ -25,7 +25,7 @@ select ok(not has_function_privilege('anon', 'private.is_collector()', 'execute'
 select ok(not has_function_privilege('anon', 'public.submit_collection_candidate(text, text, uuid, text, text, text, timestamptz, timestamptz, boolean, timestamptz, text, text, text)', 'execute') and has_function_privilege('authenticated', 'public.submit_collection_candidate(text, text, uuid, text, text, text, timestamptz, timestamptz, boolean, timestamptz, text, text, text)', 'execute'), 'submit RPC: authenticated only');
 select ok((select prosecdef and proconfig @> array['search_path=""'] from pg_proc where oid = 'public.submit_collection_candidate(text, text, uuid, text, text, text, timestamptz, timestamptz, boolean, timestamptz, text, text, text)'::regprocedure), 'submit RPC is SECURITY DEFINER with empty search_path');
 select ok((select prosecdef and proconfig @> array['search_path=""'] from pg_proc where oid = 'private.is_collector()'::regprocedure), 'is_collector() is SECURITY DEFINER with empty search_path');
-select is((select count(*)::int from private.collection_sources) + (select count(*)::int from private.collector_users) + (select count(*)::int from public.collection_candidates), 0, 'migration seeds no source, collector or candidate');
+select is((select count(*)::int from private.collection_sources where enabled) + (select count(*)::int from private.collector_users) + (select count(*)::int from public.collection_candidates), 0, 'migrations seed no enabled source, collector or candidate');
 
 -- ============================================================
 -- Fixtures (owner context)

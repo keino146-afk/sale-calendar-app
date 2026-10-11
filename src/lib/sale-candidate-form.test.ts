@@ -176,6 +176,16 @@ describe("common fields", () => {
     expect(parseSourceUrl("  https://event.rakuten.co.jp/super-sale/  ")).toBe("https://event.rakuten.co.jp/super-sale/");
   });
 
+  it.each([
+    "https://www.rakuten.co.jp:8443/",
+    "https://www.aboutamazon.jp:443/news/a/b",
+    "https://www.amazon.co.jp:/",
+    "https://user@www.aboutamazon.jp/news/a/b",
+    "http://www.aboutamazon.jp/news/a/b",
+  ])("rejects source URL %s (port, credentials or http)", (raw) => {
+    expect(parseSourceUrl(raw)).toBeNull();
+  });
+
   it.each(["", "2026-10-11", "2026-13-01T10:00", "yesterday"])("rejects checked-at %j", (sourceCheckedAt) => {
     expect(parseSaleCandidateForm(form({ ...BASE, ...DATES, sourceCheckedAt }), "date")).toEqual({
       ok: false,
