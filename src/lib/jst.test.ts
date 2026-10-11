@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   addDays,
   DAY_MS,
+  formatJstDateTime,
   formatJstFullDate,
   formatJstMonthDayTime,
   formatJstMonthDayWeekday,
@@ -65,6 +66,8 @@ describe("JST helpers", () => {
     expect(formatJstMonthDayWeekday(date)).toBe("11/1(日)");
     expect(formatJstMonthDayTime(date)).toBe("11/1 00:30");
     expect(formatJstFullDate(date)).toBe("2026/11/1");
+    expect(formatJstDateTime(date)).toBe("2026/11/1 00:30");
+    expect(formatJstDateTime(new Date("2026-12-31T15:05:00Z"))).toBe("2027/1/1 00:05");
   });
 
   it("does not depend on the process time zone", () => {

@@ -6,6 +6,7 @@ export type RecordedCall = { method: string; args: unknown[] };
 export type FakeResult = {
   data: unknown;
   error: { code?: string; message?: string } | null;
+  count?: number | null;
 };
 
 const CHAIN_METHODS = [

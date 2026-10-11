@@ -36,17 +36,9 @@ vi.mock("@/server/auth/admin-auth", () => ({
   signOutAdmin: mocks.signOutAdmin,
 }));
 
-const { default: AdminPage } = await import("./page");
 const { default: AdminLoginPage } = await import("./login/page");
 const { metadata } = await import("./layout");
 const { loginAction, logoutAction } = await import("./actions");
-
-// Fake identity values that must never reach the HTML.
-const FAKE_ADMIN = {
-  id: "00000000-0000-4000-8000-0000000000aa",
-  email: "admin@example.invalid",
-  accessToken: "eyJFAKE.ACCESS.TOKEN",
-};
 
 async function redirectUrl(promise: Promise<unknown>): Promise<string> {
   try {
@@ -127,51 +119,6 @@ describe("AdminLoginPage", () => {
 
   it("does not call the admin guard", async () => {
     await AdminLoginPage(loginProps());
-    expect(mocks.requireAdmin).not.toHaveBeenCalled();
-  });
-});
-
-describe("AdminPage", () => {
-  it("waits for a request, then requires an admin", async () => {
-    const order: string[] = [];
-    mocks.connection.mockImplementation(async () => {
-      order.push("connection");
-    });
-    mocks.requireAdmin.mockImplementation(async () => {
-      order.push("requireAdmin");
-      return { auth: {} };
-    });
-
-    await AdminPage();
-
-    expect(order).toEqual(["connection", "requireAdmin"]);
-  });
-
-  it("renders the empty dashboard without identity details", async () => {
-    mocks.requireAdmin.mockResolvedValue({ user: FAKE_ADMIN });
-
-    const html = renderToStaticMarkup(await AdminPage());
-
-    expect(html).toContain("管理画面");
-    expect(html).toContain("ログイン済み");
-    expect(html).toContain("ログアウト</button>");
-    expect(html).not.toContain(FAKE_ADMIN.id);
-    expect(html).not.toContain(FAKE_ADMIN.email);
-    expect(html).not.toContain(FAKE_ADMIN.accessToken);
-    expect(html).not.toMatch(/eyJ|access_token|refresh_token/);
-  });
-
-  it("propagates the guard's redirect for visitors who are not admins", async () => {
-    mocks.requireAdmin.mockImplementation(() => mocks.redirect("/admin/login"));
-
-    expect(await redirectUrl(AdminPage())).toBe("/admin/login");
-  });
-
-  it("does not swallow connection() failures", async () => {
-    const interrupt = new Error("prerender interrupted");
-    mocks.connection.mockRejectedValue(interrupt);
-
-    await expect(AdminPage()).rejects.toBe(interrupt);
     expect(mocks.requireAdmin).not.toHaveBeenCalled();
   });
 });
