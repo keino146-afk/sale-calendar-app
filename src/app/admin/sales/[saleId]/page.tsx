@@ -19,6 +19,7 @@ type LoadResult =
 
 // Only these fixed messages can be shown; query values are never echoed.
 const DONE_MESSAGES: Record<string, string> = {
+  created: "登録しました",
   published: "公開しました",
   rejected: "却下しました",
   archived: "終了しました",
