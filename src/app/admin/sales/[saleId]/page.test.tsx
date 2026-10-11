@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     connection: vi.fn(),
     requireAdmin: vi.fn(),
     getAdminSaleEvent: vi.fn(),
+    getLatestRejectReason: vi.fn(),
     notFound: vi.fn(() => {
       throw NOT_FOUND;
     }),
@@ -26,7 +27,15 @@ const mocks = vi.hoisted(() => {
 vi.mock("next/server", () => ({ connection: mocks.connection }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound, redirect: mocks.redirect }));
 vi.mock("@/server/auth/admin-session", () => ({ requireAdmin: mocks.requireAdmin }));
-vi.mock("@/server/data/admin-sale-events", () => ({ getAdminSaleEvent: mocks.getAdminSaleEvent }));
+vi.mock("@/server/data/admin-sale-events", () => ({
+  getAdminSaleEvent: mocks.getAdminSaleEvent,
+  getLatestRejectReason: mocks.getLatestRejectReason,
+}));
+vi.mock("./actions", () => ({
+  publishSaleAction: vi.fn(),
+  archiveSaleAction: vi.fn(),
+  reopenSaleAction: vi.fn(),
+}));
 
 const { default: AdminSaleDetailPage } = await import("./page");
 
@@ -49,12 +58,20 @@ const SALE = {
   retailer: { slug: "rakuten", name: "楽天市場" },
 };
 
-function props(saleId = SALE_ID) {
-  return { params: Promise.resolve({ saleId }), searchParams: Promise.resolve({}) };
+type Query = Record<string, string | string[] | undefined>;
+
+function props(saleId = SALE_ID, query: Query = {}) {
+  return { params: Promise.resolve({ saleId }), searchParams: Promise.resolve(query) };
 }
 
-async function render(saleId = SALE_ID) {
-  return renderToStaticMarkup(await AdminSaleDetailPage(props(saleId)));
+async function render(saleId = SALE_ID, query: Query = {}) {
+  return renderToStaticMarkup(await AdminSaleDetailPage(props(saleId, query)));
+}
+
+function actionLabels(html: string): string[] {
+  const section = html.slice(html.indexOf('aria-label="操作"'));
+  if (!html.includes('aria-label="操作"')) return [];
+  return [...section.matchAll(/>(公開する|却下する|終了する|確認待ちに戻す)</g)].map(([, label]) => label);
 }
 
 beforeEach(() => {
@@ -65,7 +82,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  for (const mock of [mocks.connection, mocks.requireAdmin, mocks.getAdminSaleEvent]) mock.mockReset();
+  for (const mock of [mocks.connection, mocks.requireAdmin, mocks.getAdminSaleEvent, mocks.getLatestRejectReason]) {
+    mock.mockReset();
+  }
   mocks.notFound.mockClear();
   mocks.redirect.mockClear();
 });
@@ -176,7 +195,7 @@ describe("AdminSaleDetailPage", () => {
     expect(mocks.notFound).not.toHaveBeenCalled();
   });
 
-  it("never renders internal fields, identity or mutation controls", async () => {
+  it("never renders internal fields, identity, edit or create controls", async () => {
     mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, title_key: "internal-key", start_date_jst: "2026-11-05" });
 
     const html = await render();
@@ -185,7 +204,87 @@ describe("AdminSaleDetailPage", () => {
       expect(html).not.toContain(hidden);
     }
     expect(html).not.toMatch(/eyJ|access_token|refresh_token/);
-    expect(html).not.toContain("<form");
-    expect(html).not.toContain("<button");
+    for (const label of ["編集", "新規", "作成"]) expect(html).not.toContain(label);
+  });
+
+  it.each([
+    ["pending_review", ["公開する", "却下する"]],
+    ["published", ["終了する"]],
+    ["rejected", ["確認待ちに戻す"]],
+    ["archived", []],
+  ])("offers only the allowed actions for %s", async (status, labels) => {
+    mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, status });
+    mocks.getLatestRejectReason.mockResolvedValue("理由");
+
+    const html = await render();
+
+    expect(actionLabels(html)).toEqual(labels);
+    // Each button form posts the sale id as a hidden field.
+    expect(html.match(/<form/g)?.length ?? 0).toBe(labels.filter((label) => label !== "却下する").length);
+    if (labels.length > 0 && labels[0] !== "却下する") {
+      expect(html).toContain(`name="saleId" value="${SALE_ID}"`);
+    }
+  });
+
+  it("links reject to the confirmation page instead of posting directly", async () => {
+    mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, status: "pending_review" });
+
+    const html = await render();
+
+    expect(html).toContain(`href="/admin/sales/${SALE_ID}/reject"`);
+  });
+
+  it("shows the latest reject reason only for rejected sales", async () => {
+    mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, status: "rejected", rejectedAt: "2026-11-02T03:00:00Z" });
+    mocks.getLatestRejectReason.mockResolvedValue("期間が公式と違う");
+
+    const rejected = await render();
+
+    expect(mocks.getLatestRejectReason).toHaveBeenCalledWith(FAKE_CLIENT, SALE_ID);
+    expect(rejected).toContain("却下理由");
+    expect(rejected).toContain("期間が公式と違う");
+
+    mocks.getLatestRejectReason.mockClear();
+    for (const status of ["pending_review", "published", "archived"]) {
+      mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, status });
+      const html = await render();
+      expect(html).not.toContain("却下理由");
+      expect(html).not.toContain("期間が公式と違う");
+    }
+    // A reopened (pending) sale does not even read the audit log.
+    expect(mocks.getLatestRejectReason).not.toHaveBeenCalled();
+  });
+
+  it("handles a rejected sale without a recorded reason", async () => {
+    mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, status: "rejected" });
+    mocks.getLatestRejectReason.mockResolvedValue(null);
+
+    expect(await render()).toContain("記録がありません");
+  });
+
+  it.each([
+    ["published", "公開しました"],
+    ["rejected", "却下しました"],
+    ["archived", "終了しました"],
+    ["reopened", "確認待ちに戻しました"],
+  ])("shows the fixed success message for done=%s", async (done, message) => {
+    mocks.getAdminSaleEvent.mockResolvedValue(SALE);
+    mocks.getLatestRejectReason.mockResolvedValue(null);
+
+    const html = await render(SALE_ID, { done });
+
+    expect(html).toContain(message);
+    expect(html).toContain('role="status"');
+  });
+
+  it("never echoes unknown query values", async () => {
+    mocks.getAdminSaleEvent.mockResolvedValue(SALE);
+
+    const html = await render(SALE_ID, { done: "<script>x</script>", error: "P0002 secret_detail" });
+
+    expect(html).not.toContain("<script>x");
+    expect(html).not.toContain("secret_detail");
+    expect(html).not.toContain('role="status"');
+    expect(html).toContain("操作を完了できませんでした");
   });
 });

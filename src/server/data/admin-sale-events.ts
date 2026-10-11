@@ -33,6 +33,10 @@ const ADMIN_SALE_EVENT_COLUMNS =
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export function isSaleEventId(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
 // Newest first by the timestamp that matches each status.
 const ORDER_COLUMN: Record<AdminSaleStatus, "created_at" | "published_at" | "rejected_at" | "archived_at"> = {
   pending_review: "created_at",
@@ -114,7 +118,7 @@ export async function getAdminSaleEvent(
   supabase: AdminSupabaseClient,
   id: string,
 ): Promise<AdminSaleEventDto | null> {
-  if (!UUID_PATTERN.test(id)) return null;
+  if (!isSaleEventId(id)) return null;
 
   const { data, error } = await supabase
     .from("sale_events")
@@ -125,4 +129,27 @@ export async function getAdminSaleEvent(
 
   if (error) fail("getAdminSaleEvent", error);
   return data === null ? null : toDto(data, "getAdminSaleEvent");
+}
+
+// Reason text of the most recent reject audit entry. Only the note is
+// selected: never the actor, row snapshots or other audit metadata.
+export async function getLatestRejectReason(
+  supabase: AdminSupabaseClient,
+  id: string,
+): Promise<string | null> {
+  if (!isSaleEventId(id)) return null;
+
+  const { data, error } = await supabase
+    .from("sale_event_audit")
+    .select("note")
+    .eq("sale_event_id", id)
+    .eq("action", "reject")
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+    .overrideTypes<{ note: string | null } | null, { merge: false }>();
+
+  if (error) fail("getLatestRejectReason", error);
+  return data?.note ?? null;
 }
