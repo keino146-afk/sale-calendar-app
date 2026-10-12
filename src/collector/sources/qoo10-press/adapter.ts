@@ -28,9 +28,10 @@ import { extractQoo10SaleDateRange } from "./date-range";
 //   C. a formal (e.g. legal) review approves this specific use.
 // Until then: no real Fetcher for this source, no schedule, and no database
 // collection source for it. The offline parser stays. Manual Qoo10 sale
-// registration on qoo10.jp is unaffected; allowing PR TIMES as a manual
-// source would be a separate decision. live-source-gate.test.ts fails if any
-// of this changes.
+// registration is unaffected: besides qoo10.jp, an admin may cite an eBay
+// Japan PR TIMES article they have read (Phase 6B), through a manual-only
+// policy row that stays disabled for collection. live-source-gate.test.ts
+// fails if any of this changes.
 export const QOO10_PRESS_LIVE_COLLECTION_STATUS = "blocked_pending_permission";
 
 export const QOO10_PRESS_PARSER_VERSION = "qoo10-ebay-japan-press-v1";

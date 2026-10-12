@@ -42,14 +42,20 @@ const ABOUTAMAZON_ARTICLE = "https://www.aboutamazon.jp/news/amazon-prime/prime-
 const CANDIDATE_ID = "55555555-5555-4555-8555-555555555555";
 const IMPORTED_ID = "66666666-6666-4666-8666-666666666666";
 
-// Stand-in for public.is_allowed_manual_source with the seeded Amazon policy
-// (the real function is covered by the pgTAP tests).
+// Synthetic eBay Japan release URL (shape only, not a real article).
+const PRTIMES_ARTICLE = "https://prtimes.jp/main/html/rd/p/000009999.000022933.html";
+
+// Stand-in for public.is_allowed_manual_source with the seeded Amazon and
+// Qoo10 policies (the real function is covered by the pgTAP tests).
 function policyRpc(name: string, args: { p_retailer_id: string; p_hostname: string; p_source_url: string }) {
   expect(name).toBe("is_allowed_manual_source");
   const allowed =
-    args.p_retailer_id === AMAZON_ID &&
-    args.p_hostname === "www.aboutamazon.jp" &&
-    /^https:\/\/www\.aboutamazon\.jp\/news\/[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/.test(args.p_source_url);
+    (args.p_retailer_id === AMAZON_ID &&
+      args.p_hostname === "www.aboutamazon.jp" &&
+      /^https:\/\/www\.aboutamazon\.jp\/news\/[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/.test(args.p_source_url)) ||
+    (args.p_retailer_id === QOO10_ID &&
+      args.p_hostname === "prtimes.jp" &&
+      /^https:\/\/prtimes\.jp\/main\/html\/rd\/p\/[0-9]{9}\.000022933\.html$/.test(args.p_source_url));
   return Promise.resolve({ data: allowed, error: null });
 }
 
@@ -340,6 +346,67 @@ describe("createSaleCandidateAction source policy", () => {
       `/admin/new?mode=date&candidateId=${candidateId}&error=source_domain`,
     );
     expect(mocks.importRpc).not.toHaveBeenCalled();
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+});
+
+describe("createSaleCandidateAction Qoo10 PR TIMES source", () => {
+  const qoo10 = (sourceUrl: string) => {
+    mocks.getActiveRetailerForAdmin.mockResolvedValue(QOO10);
+    return redirectUrl(createSaleCandidateAction(form({ ...VALID, retailerId: QOO10_ID, sourceUrl })));
+  };
+
+  it("accepts Qoo10's own domain without a policy lookup", async () => {
+    expect(await qoo10("https://www.qoo10.jp/gmkt.inc/Special/Special.aspx")).toBe(`/admin/sales/${NEW_ID}?done=created`);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("registers a sale citing an eBay Japan PR TIMES article for review only", async () => {
+    expect(await qoo10(PRTIMES_ARTICLE)).toBe(`/admin/sales/${NEW_ID}?done=created`);
+    expect(mocks.rpc).toHaveBeenCalledWith("is_allowed_manual_source", {
+      p_retailer_id: QOO10_ID,
+      p_hostname: "prtimes.jp",
+      p_source_url: PRTIMES_ARTICLE,
+    });
+    const saved = mocks.createSaleCandidate.mock.calls[0][1];
+    expect(saved).toMatchObject({ retailerId: QOO10_ID, sourceUrl: PRTIMES_ARTICLE });
+    // Content fields only: the database defaults the sale to pending_review.
+    expect(Object.keys(saved).sort()).toEqual(
+      ["description", "endsAt", "isDateOnly", "retailerId", "sourceCheckedAt", "sourceUrl", "startsAt", "title"],
+    );
+  });
+
+  it.each([
+    ["other publisher", "https://prtimes.jp/main/html/rd/p/000009999.000012345.html"],
+    ["www subdomain", "https://www.prtimes.jp/main/html/rd/p/000009999.000022933.html"],
+    ["lookalike domain", "https://evil-prtimes.jp/main/html/rd/p/000009999.000022933.html"],
+    ["evil suffix", "https://prtimes.jp.evil.example/main/html/rd/p/000009999.000022933.html"],
+    ["company feed", "https://prtimes.jp/companyrdf.php?company_id=22933"],
+    ["query string", `${PRTIMES_ARTICLE}?utm_source=rss`],
+    ["fragment", `${PRTIMES_ARTICLE}#top`],
+  ])("rejects a Qoo10 %s", async (_label, sourceUrl) => {
+    expect(await qoo10(sourceUrl)).toBe("/admin/new?mode=date&error=source_domain");
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Amazon", AMAZON],
+    ["Rakuten", RETAILER],
+  ])("rejects an eBay Japan PR TIMES article for %s", async (_label, retailer) => {
+    mocks.getActiveRetailerForAdmin.mockResolvedValue(retailer);
+    expect(
+      await redirectUrl(createSaleCandidateAction(form({ ...VALID, retailerId: retailer.id, sourceUrl: PRTIMES_ARTICLE }))),
+    ).toBe("/admin/new?mode=date&error=source_domain");
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["http", "http://prtimes.jp/main/html/rd/p/000009999.000022933.html"],
+    ["credentials", "https://user:pass@prtimes.jp/main/html/rd/p/000009999.000022933.html"],
+    ["port", "https://prtimes.jp:8443/main/html/rd/p/000009999.000022933.html"],
+  ])("rejects a PR TIMES URL with %s before any policy lookup", async (_label, sourceUrl) => {
+    expect(await qoo10(sourceUrl)).toBe("/admin/new?mode=date&error=source_url");
+    expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
   });
 });
