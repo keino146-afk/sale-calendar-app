@@ -1,6 +1,5 @@
-import type { Normalizer, ParsedCandidate, Parser, SourceAdapter, SourceDescriptor } from "../../contract";
-import { parseRssItems } from "../../rss";
-import { canonicalizeSourceUrl } from "../../url";
+import type { Normalizer, Parser, SourceAdapter, SourceDescriptor } from "../../contract";
+import { feedCandidate, feedItemParser } from "../../feed-candidate";
 import { extractSaleDateRange } from "./date-range";
 
 // Amazon official news feed (www.aboutamazon.jp), offline parts only: the
@@ -48,49 +47,14 @@ export const AMAZON_NEWS_FEED_URL = "https://www.aboutamazon.jp/rss/feed.rss";
 // not a candidate at all.
 const SALE_TITLE = /セール|プライムデー|ブラックフライデー/u;
 
-// One raw item per feed item. Dates stay null here; the normalizer decides.
-// The description is carried only so the normalizer can cross-check dates;
-// it is never stored.
-export const amazonNewsParser: Parser = {
-  parse(document) {
-    return parseRssItems(document.body).map(
-      (item): ParsedCandidate => ({
-        externalKey: item.link ?? "",
-        sourceUrl: item.link ?? "",
-        title: item.title ?? "",
-        description: item.description,
-        startsAt: null,
-        endsAt: null,
-        isDateOnly: null,
-        evidenceExcerpt: item.title ?? "",
-      }),
-    );
-  },
-};
+// One raw item per feed item (shared feed parser).
+export const amazonNewsParser: Parser = feedItemParser;
 
 export const amazonNewsNormalizer: Normalizer = {
   normalize(item) {
     if (!SALE_TITLE.test(item.title.normalize("NFKC"))) return null;
-
-    // Identity is the canonical article URL (no fragment or tracking
-    // parameters), not the GUID. An unusable link stays as given so the
-    // validator rejects it.
-    const url = canonicalizeSourceUrl(item.sourceUrl) ?? item.sourceUrl;
     const period = extractSaleDateRange([item.title, item.description]);
-    const title = item.title.trim();
-    return {
-      externalKey: url,
-      sourceUrl: url,
-      title,
-      description: null,
-      startsAt: period.ok ? period.range.startsAt : null,
-      endsAt: period.ok ? period.range.endsAt : null,
-      isDateOnly: period.ok ? false : null,
-      // Plain text only: the title, plus the period wording when it came from
-      // the description.
-      evidenceExcerpt:
-        period.ok && !title.normalize("NFKC").includes(period.range.text) ? `${title}\n${period.range.text}` : title,
-    };
+    return feedCandidate(item, period.ok ? { ...period.range, isDateOnly: false } : null);
   },
 };
 
