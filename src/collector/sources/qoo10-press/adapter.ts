@@ -6,9 +6,32 @@ import { extractQoo10SaleDateRange } from "./date-range";
 // parts only: the feed is read from a document handed in by an injected
 // Fetcher, so this module performs no network access. PR TIMES is a
 // third-party platform, so the publisher is identified by the company id in
-// the article URL (eBay Japan: 000022933), not by the host alone. Whether the
-// live feed may be collected automatically is undecided (a later phase); no
-// database source exists for it and none is enabled.
+// the article URL (eBay Japan: 000022933), not by the host alone. That check
+// is offline identity checking, not permission to collect.
+
+// Live collection decision (Phase 5E-2): BLOCKED PENDING PERMISSION.
+//
+// The PR TIMES terms describe what general users may do with company content
+// (viewing, obtaining information, private use, quotation) and restrict
+// unauthorised commercial use and copying, modifying or reusing data. No
+// official condition was found that expressly permits this app to retrieve
+// eBay Japan's PR TIMES feed on a schedule, parse it, turn it into sale
+// candidates and keep storing them. The feed being available is not treated
+// as permission. This is a conservative product decision, not a legal
+// conclusion: without confirmed permission, live collection stays off.
+//
+// Live collection may be reconsidered only when one of these is confirmed and
+// recorded, never on a developer's judgment alone:
+//   A. PR TIMES / eBay Japan expressly permit this specific use;
+//   B. official terms clearly allow automated retrieval, parsing and
+//      candidate generation / reuse for this purpose;
+//   C. a formal (e.g. legal) review approves this specific use.
+// Until then: no real Fetcher for this source, no schedule, and no database
+// collection source for it. The offline parser stays. Manual Qoo10 sale
+// registration on qoo10.jp is unaffected; allowing PR TIMES as a manual
+// source would be a separate decision. live-source-gate.test.ts fails if any
+// of this changes.
+export const QOO10_PRESS_LIVE_COLLECTION_STATUS = "blocked_pending_permission";
 
 export const QOO10_PRESS_PARSER_VERSION = "qoo10-ebay-japan-press-v1";
 
@@ -25,7 +48,8 @@ export const QOO10_PRESS_SOURCE: SourceDescriptor = {
 };
 
 // Identifies the company feed (RSS 1.0) the offline parser is written for.
-// Nothing in this repository requests it.
+// Nothing in this repository requests it (see
+// QOO10_PRESS_LIVE_COLLECTION_STATUS).
 export const QOO10_PRESS_FEED_URL = "https://prtimes.jp/companyrdf.php?company_id=22933";
 
 // Conservative v1: a Qoo10 title announcing a Mega sale (メガ割 / メガポ) being
