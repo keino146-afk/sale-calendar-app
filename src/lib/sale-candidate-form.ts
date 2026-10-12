@@ -1,4 +1,4 @@
-import { DAY_MS, JST_OFFSET_MS } from "./jst";
+import { DAY_MS, getJstParts, JST_OFFSET_MS, jstDateKey } from "./jst";
 
 // Parsing and validation for the admin "new sale candidate" form. Mirrors the
 // sale_events constraints (the database stays the final authority):
@@ -61,10 +61,12 @@ export function isValidTitle(title: string): boolean {
   return length >= 1 && length <= TITLE_MAX_LENGTH;
 }
 
-// Absolute https URL without credentials, as the database requires.
+// Absolute https URL without credentials, an explicit port, whitespace or
+// control characters.
 export function parseSourceUrl(raw: string): string | null {
   const value = raw.trim();
   if (value === "" || value.length > SOURCE_URL_MAX_LENGTH) return null;
+  if (/[\s\p{Cc}]/u.test(value)) return null;
   let url: URL;
   try {
     url = new URL(value);
@@ -73,6 +75,8 @@ export function parseSourceUrl(raw: string): string | null {
   }
   if (url.protocol !== "https:" || url.username !== "" || url.password !== "") return null;
   if (!value.toLowerCase().startsWith("https://")) return null;
+  // URL drops a default ":443", so also look at the authority as written.
+  if (url.port !== "" || /^https:\/\/[^/?#]*:/i.test(value)) return null;
   return value;
 }
 
@@ -168,5 +172,55 @@ export function parseSaleCandidateForm(formData: FormData, mode: PeriodMode): Re
       sourceUrl,
       sourceCheckedAt,
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Form defaults (e.g. prefilled from a collection candidate). These are only
+// starting values for the admin to check; submission is validated as usual.
+
+export type SaleFormDefaults = {
+  retailerId: string;
+  title: string;
+  description: string;
+  startDate: string;
+  endDate: string;
+  startsAt: string;
+  endsAt: string;
+  sourceUrl: string;
+  sourceCheckedAt: string;
+};
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+// datetime-local value ("YYYY-MM-DDTHH:MM") in JST.
+export function toJstDateTimeLocal(date: Date): string {
+  const { year, month, day, hour, minute } = getJstParts(date);
+  return `${year}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${pad2(minute)}`;
+}
+
+// Date fields use the inclusive last day: the instant just before the
+// exclusive end (so 10/14 00:00 -> 10/13, and 23:59 stays the same day).
+export function saleFormDefaultsFromPeriod(input: {
+  retailerId: string;
+  title: string;
+  description: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  sourceUrl: string;
+  sourceCheckedAt: Date;
+}): SaleFormDefaults {
+  return {
+    retailerId: input.retailerId,
+    title: input.title,
+    description: input.description ?? "",
+    startDate: jstDateKey(input.startsAt),
+    endDate: jstDateKey(new Date(input.endsAt.getTime() - 1)),
+    startsAt: toJstDateTimeLocal(input.startsAt),
+    endsAt: toJstDateTimeLocal(input.endsAt),
+    sourceUrl: input.sourceUrl,
+    sourceCheckedAt: toJstDateTimeLocal(input.sourceCheckedAt),
   };
 }

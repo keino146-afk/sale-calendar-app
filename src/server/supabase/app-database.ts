@@ -29,10 +29,23 @@ export type SaleEventInsertColumn = (typeof SALE_EVENT_INSERT_COLUMNS)[number];
 
 export type SaleEventAppInsert = Pick<GeneratedSaleEvents["Insert"], SaleEventInsertColumn>;
 
+// The generator also marks every RPC argument as a non-null string. The
+// candidate import accepts p_description = null (no description), exactly
+// like sale_events.description, so that one argument is widened; the rest
+// stays generated.
+type GeneratedImportCandidate = GeneratedPublic["Functions"]["import_collection_candidate"];
+
+export type ImportCollectionCandidateArgs = Omit<GeneratedImportCandidate["Args"], "p_description"> & {
+  p_description: string | null;
+};
+
 export type AppDatabase = Omit<GeneratedDatabase, "public"> & {
-  public: Omit<GeneratedPublic, "Tables"> & {
+  public: Omit<GeneratedPublic, "Tables" | "Functions"> & {
     Tables: Omit<GeneratedPublic["Tables"], "sale_events"> & {
       sale_events: Omit<GeneratedSaleEvents, "Insert"> & { Insert: SaleEventAppInsert };
+    };
+    Functions: Omit<GeneratedPublic["Functions"], "import_collection_candidate"> & {
+      import_collection_candidate: Omit<GeneratedImportCandidate, "Args"> & { Args: ImportCollectionCandidateArgs };
     };
   };
 };

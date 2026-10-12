@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic test feed. Every title, link and text is invented for tests; nothing is copied from any real feed or article. -->
+<rss version="2.0">
+  <channel>
+    <title>テスト用ニュースフィード</title>
+    <link>https://www.aboutamazon.jp/news</link>
+    <description>テスト用</description>
+    <item>
+      <title>Amazon、テストセールを2026年11月6日（金）9時から2026年11月9日（月）23時59分まで開催</title>
+      <link>https://www.aboutamazon.jp/news/test-category/test-sale-2026?utm_source=rss&amp;utm_medium=feed#top</link>
+      <guid isPermaLink="false">test-guid-0001</guid>
+      <pubDate>Mon, 19 Oct 2026 01:00:00 GMT</pubDate>
+      <description><![CDATA[<p>テスト用の説明です。<b>これは架空の記事です。</b></p>]]></description>
+    </item>
+    <item>
+      <title>Amazon、ブラックフライデーのテスト企画を開催</title>
+      <link>https://www.aboutamazon.jp/news/test-category/test-black-friday-2026</link>
+      <guid isPermaLink="false">test-guid-0002</guid>
+      <pubDate>Tue, 20 Oct 2026 01:00:00 GMT</pubDate>
+      <description>期間は2026年11月20日0時から2026年11月27日23時59分までです（テスト）。</description>
+    </item>
+    <item>
+      <title>Amazon、テスト用の新しいサービスを開始</title>
+      <link>https://www.aboutamazon.jp/news/test-category/test-new-service</link>
+      <guid isPermaLink="false">test-guid-0003</guid>
+      <pubDate>Wed, 21 Oct 2026 01:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Amazon、テストタイムセールを11月12日9時から11月13日23時59分まで開催</title>
+      <link>https://www.aboutamazon.jp/news/test-category/test-no-year-sale</link>
+      <guid isPermaLink="false">test-guid-0004</guid>
+    </item>
+    <item>
+      <title>Amazon、テスト週末セールを2026年11月14日から2026年11月15日まで開催</title>
+      <link>https://www.aboutamazon.jp/news/test-category/test-no-time-sale</link>
+      <guid isPermaLink="false">test-guid-0005</guid>
+    </item>
+    <item>
+      <title>Amazon、テスト二重セールを2026年12月1日9時から2026年12月3日23時59分まで開催</title>
+      <link>https://www.aboutamazon.jp/news/test-category/test-conflicting-sale</link>
+      <guid isPermaLink="false">test-guid-0006</guid>
+      <description>期間は2026年12月2日9時から2026年12月4日23時59分までです（テスト）。</description>
+    </item>
+  </channel>
+</rss>

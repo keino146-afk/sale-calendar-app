@@ -19,6 +19,11 @@ async function sourceFiles(dir: string): Promise<string[]> {
 
 const ALL = await sourceFiles("src");
 const APP_CODE = ALL.filter((file) => !/\.test\.(ts|tsx)$/.test(file) && !file.startsWith("src/test/"));
+// Code that talks to Supabase. src/collector is excluded from the
+// query-builder write checks because it never imports a Supabase client
+// (enforced in src/collector/collector.test.ts); its .update()/.delete() calls
+// are on hashes and URLSearchParams.
+const DATA_CODE = APP_CODE.filter((file) => !file.startsWith("src/collector/"));
 
 async function filesMatching(files: string[], pattern: RegExp): Promise<string[]> {
   const hits: string[] = [];
@@ -77,13 +82,13 @@ describe("admin security boundary", () => {
   });
 
   it("never updates lifecycle columns directly", async () => {
-    expect(await filesMatching(APP_CODE, /\.update\(|status\s*:\s*["']published/)).toEqual([]);
+    expect(await filesMatching(DATA_CODE, /\.update\(|status\s*:\s*["']published/)).toEqual([]);
   });
 
   it("never writes tables directly (lifecycle changes go through RPCs)", async () => {
-    expect(await filesMatching(APP_CODE, /\.(upsert|delete)\(/)).toEqual([]);
+    expect(await filesMatching(DATA_CODE, /\.(upsert|delete)\(/)).toEqual([]);
     // The only INSERT is manual candidate creation (status left to the DB default).
-    expect(await filesMatching(APP_CODE, /\.insert\(/)).toEqual(["src/server/data/admin-sale-create.ts"]);
+    expect(await filesMatching(DATA_CODE, /\.insert\(/)).toEqual(["src/server/data/admin-sale-create.ts"]);
     const createCode = await readFile("src/server/data/admin-sale-create.ts", "utf8");
     expect(createCode).not.toMatch(/\bstatus\s*:/);
     expect(createCode).not.toMatch(/title_key\s*:|start_date_jst\s*:|published_at\s*:/);
@@ -102,6 +107,8 @@ describe("admin security boundary", () => {
   it("calls only the known RPCs", async () => {
     const allowed = new Set([
       "current_user_is_admin",
+      "import_collection_candidate",
+      "is_allowed_manual_source",
       "publish_sale_event",
       "reject_sale_event",
       "archive_sale_event",
@@ -132,6 +139,37 @@ describe("admin security boundary", () => {
       expect(code).toContain("requireAdmin()");
       expect(code.indexOf("isSameOriginRequest()")).toBeLessThan(code.indexOf("requireAdmin()"));
     }
+  });
+
+  it("only reads collection candidates (no candidate mutation path)", async () => {
+    expect(await filesMatching(DATA_CODE, /collection_candidates/)).toEqual([
+      "src/server/data/admin-collection-candidates.ts",
+      "src/server/supabase/database.types.ts",
+    ]);
+    const reader = await readFile("src/server/data/admin-collection-candidates.ts", "utf8");
+    expect(reader).not.toMatch(/\.(insert|update|upsert|delete|rpc)\(/);
+    // The collector write RPC is never used by the web app.
+    expect(await filesMatching(APP_CODE, /submit_collection_candidate/)).toEqual([
+      "src/server/supabase/database.types.ts",
+    ]);
+    // The only candidate state change is the atomic import RPC, called from
+    // one data module that makes no other write.
+    expect(await filesMatching(APP_CODE, /import_collection_candidate/)).toEqual([
+      "src/server/data/admin-candidate-import.ts",
+      "src/server/supabase/app-database.ts",
+      "src/server/supabase/database.types.ts",
+    ]);
+    const importer = await readFile("src/server/data/admin-candidate-import.ts", "utf8");
+    expect(importer.match(/\.rpc\(/g)).toHaveLength(1);
+    expect(importer).not.toMatch(/\.(from|insert|update|upsert|delete)\(/);
+  });
+
+  it("never reads source policies directly (database check only)", async () => {
+    expect(await filesMatching(APP_CODE, /collection_sources|collector_users/)).toEqual([]);
+    expect(await filesMatching(APP_CODE, /is_allowed_manual_source/)).toEqual([
+      "src/server/data/admin-source-policy.ts",
+      "src/server/supabase/database.types.ts",
+    ]);
   });
 
   it("keeps public pages free of admin session code", async () => {

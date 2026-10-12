@@ -188,11 +188,16 @@ describe("AdminPage", () => {
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
   });
 
-  it("links to the new sale form", async () => {
+  it("links to the new sale form and the collection candidates", async () => {
     const html = await render();
 
     expect(html).toContain('href="/admin/new"');
     expect(html).toContain("新しいセールを登録");
+    expect(html).toContain('href="/admin/collection"');
+    expect(html).toContain("収集候補");
+    // No extra query for the link.
+    expect(mocks.listAdminSaleEvents).toHaveBeenCalledTimes(1);
+    expect(mocks.countPendingSaleEvents).toHaveBeenCalledTimes(1);
   });
 
   it("lists sales in DAL order with status, period, checked date and detail links", async () => {

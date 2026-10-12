@@ -4,12 +4,19 @@ import { connection } from "next/server";
 import { createSaleCandidateAction } from "./actions";
 import { requireAdmin } from "@/server/auth/admin-session";
 import { listActiveRetailersForAdmin, type AdminRetailerOption } from "@/server/data/admin-sale-create";
-import { getJstParts } from "@/lib/jst";
+import {
+  getCollectionCandidate,
+  isCandidateId,
+  type CollectionCandidateDetail,
+} from "@/server/data/admin-collection-candidates";
 import {
   DESCRIPTION_MAX_LENGTH,
   parsePeriodMode,
+  saleFormDefaultsFromPeriod,
   SOURCE_URL_MAX_LENGTH,
+  toJstDateTimeLocal,
   type PeriodMode,
+  type SaleFormDefaults,
 } from "@/lib/sale-candidate-form";
 
 // Only these fixed messages can be shown; query values are never echoed.
@@ -23,18 +30,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   checked_at: "情報を確認した日時を正しく入力してください",
   period: "期間を正しく入力してください（終了は開始より後にしてください）",
   duplicate: "同じセールがすでに登録されています",
+  candidate_state: "この収集候補はすでに登録済みか、登録できない状態です",
   failed: "登録できませんでした",
 };
-
-function pad2(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-// Current JST time in datetime-local format, as a convenient default.
-function jstNowLocal(now: Date): string {
-  const { year, month, day, hour, minute } = getJstParts(now);
-  return `${year}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${pad2(minute)}`;
-}
 
 const INPUT_CLASS = "rounded-xl border border-black/10 px-3 py-2 text-base";
 
@@ -44,8 +42,7 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
   const supabase = await requireAdmin();
   const now = new Date();
 
-  const { mode: rawMode, error } = await searchParams;
-  const mode = parsePeriodMode(rawMode);
+  const { mode: rawMode, error, candidateId: rawCandidateId } = await searchParams;
   const errorMessage = typeof error === "string" && Object.hasOwn(ERROR_MESSAGES, error) ? ERROR_MESSAGES[error] : null;
 
   let retailers: AdminRetailerOption[] | null;
@@ -55,6 +52,43 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
     console.error(`[admin] new sale page failed: ${loadError instanceof Error ? loadError.name : "UnknownError"}`);
     retailers = null;
   }
+
+  // Optional prefill from a collection candidate. Only the id travels in the
+  // URL; the content is looked up here as the admin (RLS). A malformed id is
+  // ignored without querying. The values are only starting points: the
+  // submission goes through createSaleCandidateAction's validation, and the
+  // import RPC re-checks everything. Only a candidate that is still new is
+  // offered; an imported or dismissed one cannot be registered again.
+  const candidateId = isCandidateId(rawCandidateId) ? rawCandidateId : null;
+  let candidate: CollectionCandidateDetail | null = null;
+  let candidateUnavailable = false;
+  let candidateClosed = false;
+  if (candidateId !== null) {
+    try {
+      candidate = await getCollectionCandidate(supabase, candidateId);
+    } catch (loadError) {
+      console.error(`[admin] candidate prefill failed: ${loadError instanceof Error ? loadError.name : "UnknownError"}`);
+    }
+    if (candidate !== null && candidate.reviewState !== "new") {
+      candidate = null;
+      candidateClosed = true;
+    }
+    candidateUnavailable = candidate === null && !candidateClosed;
+  }
+  const defaults: SaleFormDefaults | null =
+    candidate === null
+      ? null
+      : saleFormDefaultsFromPeriod({
+          retailerId: candidate.retailer.id,
+          title: candidate.title,
+          description: candidate.description,
+          startsAt: new Date(candidate.startsAt),
+          endsAt: new Date(candidate.endsAt),
+          sourceUrl: candidate.sourceUrl,
+          sourceCheckedAt: new Date(candidate.sourceCheckedAt),
+        });
+  const mode: PeriodMode =
+    typeof rawMode === "string" || candidate === null ? parsePeriodMode(rawMode) : candidate.isDateOnly ? "date" : "datetime";
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 pb-12 pt-6">
@@ -68,10 +102,36 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
           {errorMessage}
         </p>
       ) : null}
+      {candidate !== null ? (
+        <p data-prefilled-from-candidate="true" className="rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          収集候補の内容を入力しました。公式ページで内容を確認・修正してから登録してください。
+        </p>
+      ) : null}
+      {candidate?.sourceChanged ? (
+        <p role="alert" data-source-changed="true" className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          収集後に公式情報が変更されています。登録前に公式ページを確認してください。
+        </p>
+      ) : null}
+      {candidateClosed ? (
+        <p role="alert" data-candidate-closed="true" className="rounded-2xl bg-red-50 px-4 py-3 text-center text-sm text-red-700">
+          この収集候補はすでに登録済みか、見送り済みです
+        </p>
+      ) : null}
+      {candidateUnavailable ? (
+        <p role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-center text-sm text-red-700">
+          収集候補を読み込めませんでした
+        </p>
+      ) : null}
       {retailers === null ? (
         <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm shadow-sm">店舗を読み込めませんでした</p>
       ) : (
-        <SaleForm mode={mode} retailers={retailers} checkedAtDefault={jstNowLocal(now)} />
+        <SaleForm
+          mode={mode}
+          retailers={retailers}
+          defaults={defaults}
+          candidateId={candidate === null ? null : candidate.id}
+          checkedAtDefault={toJstDateTimeLocal(now)}
+        />
       )}
     </main>
   );
@@ -87,11 +147,21 @@ function Field({ label, help, children }: { label: string; help?: string; childr
   );
 }
 
-function ModeLink({ value, current, children }: { value: PeriodMode; current: PeriodMode; children: ReactNode }) {
+function ModeLink({
+  value,
+  current,
+  candidateId,
+  children,
+}: {
+  value: PeriodMode;
+  current: PeriodMode;
+  candidateId: string | null;
+  children: ReactNode;
+}) {
   const selected = value === current;
   return (
     <Link
-      href={`/admin/new?mode=${value}`}
+      href={`/admin/new?mode=${value}${candidateId === null ? "" : `&candidateId=${candidateId}`}`}
       aria-current={selected ? "page" : undefined}
       className={`flex-1 rounded-full px-4 py-1.5 text-center text-sm ${
         selected ? "bg-blue-500 font-semibold text-white" : "border border-black/10 bg-white"
@@ -105,20 +175,28 @@ function ModeLink({ value, current, children }: { value: PeriodMode; current: Pe
 function SaleForm({
   mode,
   retailers,
+  defaults,
+  candidateId,
   checkedAtDefault,
 }: {
   mode: PeriodMode;
   retailers: AdminRetailerOption[];
+  defaults: SaleFormDefaults | null;
+  candidateId: string | null;
   checkedAtDefault: string;
 }) {
+  // An inactive retailer is not an option; the admin then chooses again.
+  const retailerDefault =
+    defaults !== null && retailers.some((retailer) => retailer.id === defaults.retailerId) ? defaults.retailerId : "";
   return (
     <form
       action={createSaleCandidateAction}
       className="flex flex-col gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5"
     >
       <input type="hidden" name="mode" value={mode} />
+      {candidateId !== null ? <input type="hidden" name="candidateId" value={candidateId} /> : null}
       <Field label="店舗">
-        <select name="retailerId" required defaultValue="" className={INPUT_CLASS}>
+        <select name="retailerId" required defaultValue={retailerDefault} className={INPUT_CLASS}>
           <option value="" disabled>
             選んでください
           </option>
@@ -130,35 +208,41 @@ function SaleForm({
         </select>
       </Field>
       <Field label="タイトル">
-        <input type="text" name="title" required maxLength={400} className={INPUT_CLASS} />
+        <input type="text" name="title" required maxLength={400} defaultValue={defaults?.title} className={INPUT_CLASS} />
       </Field>
       <Field label="説明（任意）">
-        <textarea name="description" rows={3} maxLength={DESCRIPTION_MAX_LENGTH} className={INPUT_CLASS} />
+        <textarea
+          name="description"
+          rows={3}
+          maxLength={DESCRIPTION_MAX_LENGTH}
+          defaultValue={defaults?.description}
+          className={INPUT_CLASS}
+        />
       </Field>
       <nav aria-label="期間の種類" className="flex gap-2">
-        <ModeLink value="date" current={mode}>
+        <ModeLink value="date" current={mode} candidateId={candidateId}>
           日付のみ
         </ModeLink>
-        <ModeLink value="datetime" current={mode}>
+        <ModeLink value="datetime" current={mode} candidateId={candidateId}>
           時刻あり
         </ModeLink>
       </nav>
       {mode === "date" ? (
         <>
           <Field label="開始日">
-            <input type="date" name="startDate" required className={INPUT_CLASS} />
+            <input type="date" name="startDate" required defaultValue={defaults?.startDate} className={INPUT_CLASS} />
           </Field>
           <Field label="終了日（この日を含む）">
-            <input type="date" name="endDate" required className={INPUT_CLASS} />
+            <input type="date" name="endDate" required defaultValue={defaults?.endDate} className={INPUT_CLASS} />
           </Field>
         </>
       ) : (
         <>
           <Field label="開始日時（日本時間）">
-            <input type="datetime-local" name="startsAt" required className={INPUT_CLASS} />
+            <input type="datetime-local" name="startsAt" required defaultValue={defaults?.startsAt} className={INPUT_CLASS} />
           </Field>
           <Field label="終了日時（日本時間・この時刻に終了）">
-            <input type="datetime-local" name="endsAt" required className={INPUT_CLASS} />
+            <input type="datetime-local" name="endsAt" required defaultValue={defaults?.endsAt} className={INPUT_CLASS} />
           </Field>
         </>
       )}
@@ -169,6 +253,7 @@ function SaleForm({
           required
           maxLength={SOURCE_URL_MAX_LENGTH}
           placeholder="https://"
+          defaultValue={defaults?.sourceUrl}
           className={INPUT_CLASS}
         />
       </Field>
@@ -177,7 +262,7 @@ function SaleForm({
           type="datetime-local"
           name="sourceCheckedAt"
           required
-          defaultValue={checkedAtDefault}
+          defaultValue={defaults?.sourceCheckedAt ?? checkedAtDefault}
           className={INPUT_CLASS}
         />
       </Field>
