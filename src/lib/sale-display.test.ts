@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifySales,
+  formatPublicSalePeriod,
   formatSalePeriod,
   isSaleActive,
   isSaleUpcoming,
@@ -92,6 +93,84 @@ describe("formatSalePeriod", () => {
   it("does not subtract a minute from timed sales", () => {
     expect(formatSalePeriod(sale("2026-11-04T11:00:00Z", "2026-11-10T16:59:00Z"))).toBe(
       "11/4 20:00 〜 11/11 01:59",
+    );
+  });
+});
+
+describe("formatPublicSalePeriod", () => {
+  it("shows the last running minute of a timed sale (midnight end)", () => {
+    // 2026-10-13 00:00 JST to 2026-10-16 00:00 JST (exclusive)
+    expect(formatPublicSalePeriod(sale("2026-10-12T15:00:00Z", "2026-10-15T15:00:00Z"))).toBe(
+      "10/13 00:00 〜 10/15 23:59",
+    );
+  });
+
+  it("shows the last running minute of a timed sale (daytime end)", () => {
+    // 2026-10-14 20:00 JST to 2026-10-17 10:00 JST (exclusive)
+    expect(formatPublicSalePeriod(sale("2026-10-14T11:00:00Z", "2026-10-17T01:00:00Z"))).toBe(
+      "10/14 20:00 〜 10/17 09:59",
+    );
+  });
+
+  it("crosses a month boundary", () => {
+    // ... to 2026-11-01 00:00 JST (exclusive)
+    expect(formatPublicSalePeriod(sale("2026-10-27T11:00:00Z", "2026-10-31T15:00:00Z"))).toBe(
+      "10/27 20:00 〜 10/31 23:59",
+    );
+  });
+
+  it("crosses a year boundary", () => {
+    // ... to 2027-01-01 00:00 JST (exclusive)
+    expect(formatPublicSalePeriod(sale("2026-12-25T15:00:00Z", "2026-12-31T15:00:00Z"))).toBe(
+      "12/26 00:00 〜 12/31 23:59",
+    );
+  });
+
+  it("formats in JST regardless of the UTC date", () => {
+    // 2026-10-16 08:30 JST (exclusive) is 2026-10-15 23:30 UTC
+    expect(formatPublicSalePeriod(sale("2026-10-15T15:00:00Z", "2026-10-15T23:30:00Z"))).toBe(
+      "10/16 00:00 〜 10/16 08:29",
+    );
+  });
+
+  it("keeps the start time unchanged", () => {
+    expect(formatPublicSalePeriod(sale("2026-11-04T11:00:00Z", "2026-11-10T17:00:00Z"))).toMatch(/^11\/4 20:00 〜 /);
+  });
+
+  it("shows a one-minute sale as a single minute on both sides", () => {
+    expect(formatPublicSalePeriod(sale("2026-11-04T11:00:00Z", "2026-11-04T11:01:00Z"))).toBe(
+      "11/4 20:00 〜 11/4 20:00",
+    );
+  });
+
+  it("keeps the minute that contains a seconds-precision end", () => {
+    // Exclusive end 10:00:30 JST: the sale still runs during 10:00.
+    expect(formatPublicSalePeriod(sale("2026-10-14T11:00:00Z", "2026-10-17T01:00:30Z"))).toBe(
+      "10/14 20:00 〜 10/17 10:00",
+    );
+  });
+
+  it("matches formatSalePeriod for date-only sales", () => {
+    for (const dateOnly of [
+      sale("2026-10-31T15:00:00Z", "2026-11-03T15:00:00Z", true),
+      sale("2026-10-31T15:00:00Z", "2026-11-01T15:00:00Z", true),
+    ]) {
+      expect(formatPublicSalePeriod(dateOnly)).toBe(formatSalePeriod(dateOnly));
+    }
+    expect(formatPublicSalePeriod(sale("2026-10-31T15:00:00Z", "2026-11-03T15:00:00Z", true))).toBe(
+      "11/1(日) 〜 11/3(火)",
+    );
+  });
+
+  it("does not mutate the sale it formats", () => {
+    const timed = Object.freeze(sale("2026-10-12T15:00:00Z", "2026-10-15T15:00:00Z"));
+    formatPublicSalePeriod(timed);
+    expect(timed).toEqual({ startsAt: "2026-10-12T15:00:00Z", endsAt: "2026-10-15T15:00:00Z", isDateOnly: false });
+  });
+
+  it("leaves the admin formatter showing the stored exclusive end", () => {
+    expect(formatSalePeriod(sale("2026-10-12T15:00:00Z", "2026-10-15T15:00:00Z"))).toBe(
+      "10/13 00:00 〜 10/16 00:00",
     );
   });
 });

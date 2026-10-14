@@ -7,7 +7,7 @@ import { listPublishedSaleEvents, type SaleEventDto } from "@/server/data/sale-e
 import { addDays } from "@/lib/jst";
 import {
   classifySales,
-  formatSalePeriod,
+  formatPublicSalePeriod,
   isSaleActive,
   UPCOMING_DAYS,
 } from "@/lib/sale-display";
@@ -18,7 +18,7 @@ function toListItem(sale: SaleEventDto, now: Date): SaleListItem {
     title: sale.title,
     retailerSlug: sale.retailer.slug,
     retailerName: sale.retailer.name,
-    period: formatSalePeriod(sale),
+    period: formatPublicSalePeriod(sale),
     isActive: isSaleActive(sale, now),
   };
 }

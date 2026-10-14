@@ -179,6 +179,18 @@ describe("Home", () => {
     expect(html.indexOf("開催中セール")).toBeLessThan(html.indexOf("近日セール"));
   });
 
+  it("shows a timed sale's exclusive end as its last running minute", async () => {
+    listPublishedSaleEvents.mockResolvedValue([
+      // 2026-10-13 00:00 JST to 2026-10-16 00:00 JST (exclusive)
+      makeSale("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "先行セール", "2026-10-12T15:00:00Z", "2026-10-15T15:00:00Z"),
+    ]);
+
+    const html = await renderHome();
+
+    expect(html).toContain("10/13 00:00 〜 10/15 23:59");
+    expect(html).not.toContain("10/16 00:00");
+  });
+
   it("renders empty states", async () => {
     const html = await renderHome();
 
