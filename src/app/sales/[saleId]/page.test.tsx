@@ -77,7 +77,9 @@ describe("SaleDetailPage", () => {
 
     expect(html).toContain("スーパーSALE");
     expect(html).toContain("楽天市場");
-    expect(html).toContain("11/4 20:00 〜 11/11 02:00");
+    // Exclusive end 11/11 02:00 is shown as the last running minute.
+    expect(html).toContain("11/4 20:00 〜 11/11 01:59");
+    expect(html).not.toContain("11/11 02:00");
     expect(html).toContain("最大50%OFF");
     expect(html).toContain('href="/"');
   });

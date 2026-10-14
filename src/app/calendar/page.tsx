@@ -19,7 +19,7 @@ import {
   shiftMonth,
   type YearMonth,
 } from "@/lib/calendar-grid";
-import { formatSalePeriod, isSaleActive, type SaleTiming } from "@/lib/sale-display";
+import { formatPublicSalePeriod, isSaleActive, type SaleTiming } from "@/lib/sale-display";
 
 export default async function CalendarPage({ searchParams }: PageProps<"/calendar">) {
   // Must stay outside try/catch: it interrupts prerendering at build time
@@ -100,7 +100,7 @@ function toListItem(sale: SaleEventDto, now: Date): SaleListItem {
     title: sale.title,
     retailerSlug: sale.retailer.slug,
     retailerName: sale.retailer.name,
-    period: formatSalePeriod(sale),
+    period: formatPublicSalePeriod(sale),
     isActive: isSaleActive(sale, now),
   };
 }
