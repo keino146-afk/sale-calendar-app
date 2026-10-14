@@ -7,6 +7,7 @@ import {
   parseJstDateTime,
   parsePeriodMode,
   parseSaleCandidateForm,
+  parseSaleContentForm,
   parseSourceUrl,
 } from "./sale-candidate-form";
 
@@ -263,5 +264,37 @@ describe("saleFormDefaultsFromPeriod", () => {
 
   it("formats datetime-local values in JST", () => {
     expect(toJstDateTimeLocal(new Date("2025-12-31T15:05:00Z"))).toBe("2026-01-01T00:05");
+  });
+});
+
+describe("parseSaleContentForm", () => {
+  const fields = { ...BASE, startsAt: "2026-10-13T00:00", endsAt: "2026-10-16T00:00" };
+
+  it("parses the content exactly like registration, without a retailer", () => {
+    const content = parseSaleContentForm(form(fields), "datetime");
+    const candidate = parseSaleCandidateForm(form(fields), "datetime");
+
+    expect(content.ok && candidate.ok).toBe(true);
+    if (!content.ok || !candidate.ok) return;
+    expect(content.value).not.toHaveProperty("retailerId");
+    expect({ retailerId: RETAILER_ID, ...content.value }).toEqual(candidate.value);
+  });
+
+  it("ignores any retailer in the form", () => {
+    const result = parseSaleContentForm(form({ ...fields, retailerId: "not-a-uuid" }), "datetime");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).not.toHaveProperty("retailerId");
+  });
+
+  it("reports the same errors as registration", () => {
+    expect(parseSaleContentForm(form({ ...fields, title: " " }), "datetime")).toEqual({ ok: false, error: "title" });
+    expect(parseSaleContentForm(form({ ...fields, endsAt: "2026-10-13T00:00" }), "datetime")).toEqual({
+      ok: false,
+      error: "period",
+    });
+    expect(parseSaleContentForm(form({ ...fields, sourceUrl: "http://x.example/" }), "datetime")).toEqual({
+      ok: false,
+      error: "source_url",
+    });
   });
 });

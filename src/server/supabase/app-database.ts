@@ -39,13 +39,21 @@ export type ImportCollectionCandidateArgs = Omit<GeneratedImportCandidate["Args"
   p_description: string | null;
 };
 
+// Same for the content update: p_description = null clears the description.
+type GeneratedUpdateSaleEvent = GeneratedPublic["Functions"]["update_sale_event"];
+
+export type UpdateSaleEventArgs = Omit<GeneratedUpdateSaleEvent["Args"], "p_description"> & {
+  p_description: string | null;
+};
+
 export type AppDatabase = Omit<GeneratedDatabase, "public"> & {
   public: Omit<GeneratedPublic, "Tables" | "Functions"> & {
     Tables: Omit<GeneratedPublic["Tables"], "sale_events"> & {
       sale_events: Omit<GeneratedSaleEvents, "Insert"> & { Insert: SaleEventAppInsert };
     };
-    Functions: Omit<GeneratedPublic["Functions"], "import_collection_candidate"> & {
+    Functions: Omit<GeneratedPublic["Functions"], "import_collection_candidate" | "update_sale_event"> & {
       import_collection_candidate: Omit<GeneratedImportCandidate, "Args"> & { Args: ImportCollectionCandidateArgs };
+      update_sale_event: Omit<GeneratedUpdateSaleEvent, "Args"> & { Args: UpdateSaleEventArgs };
     };
   };
 };

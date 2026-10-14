@@ -113,6 +113,7 @@ describe("admin security boundary", () => {
       "reject_sale_event",
       "archive_sale_event",
       "reopen_sale_event",
+      "update_sale_event",
     ]);
     const used = new Set<string>();
     for (const file of APP_CODE) {
@@ -162,6 +163,28 @@ describe("admin security boundary", () => {
     const importer = await readFile("src/server/data/admin-candidate-import.ts", "utf8");
     expect(importer.match(/\.rpc\(/g)).toHaveLength(1);
     expect(importer).not.toMatch(/\.(from|insert|update|upsert|delete)\(/);
+  });
+
+  it("edits sale content only through the update RPC, from one data module", async () => {
+    // The only content change path is public.update_sale_event, called from
+    // one data module that makes no other write (the .update( ban above stays).
+    expect(await filesMatching(APP_CODE, /update_sale_event/)).toEqual([
+      "src/server/data/admin-sale-edit.ts",
+      "src/server/supabase/app-database.ts",
+      "src/server/supabase/database.types.ts",
+    ]);
+    const editor = await readFile("src/server/data/admin-sale-edit.ts", "utf8");
+    expect(editor.match(/\.rpc\(/g)).toHaveLength(1);
+    expect(editor).not.toMatch(/\.(insert|update|upsert|delete)\(/);
+    // Only the edit action uses the data module, and it never sends a status
+    // or retailer from the form.
+    expect(await filesMatching(APP_CODE, /admin-sale-edit"/)).toEqual([
+      "src/app/admin/sales/[saleId]/edit/actions.ts",
+      "src/app/admin/sales/[saleId]/edit/page.tsx",
+    ]);
+    const action = await readFile("src/app/admin/sales/[saleId]/edit/actions.ts", "utf8");
+    expect(action).not.toMatch(/formData\.get\(["'](status|retailerId)["']\)/);
+    expect(editor).not.toMatch(/p_status|p_retailer_id/);
   });
 
   it("never reads source policies directly (database check only)", async () => {
