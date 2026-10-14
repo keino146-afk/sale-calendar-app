@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { getPublishedSaleEvent, type SaleEventDto } from "@/server/data/sale-events";
 import { formatJstFullDate } from "@/lib/jst";
-import { formatSalePeriod } from "@/lib/sale-display";
+import { formatPublicSalePeriod } from "@/lib/sale-display";
 
 type LoadResult = { ok: true; sale: SaleEventDto | null } | { ok: false };
 
@@ -45,7 +45,7 @@ export default async function SaleDetailPage({ params }: PageProps<"/sales/[sale
           {sale.retailer.name}
         </span>
         <h1 className="text-2xl font-semibold">{sale.title}</h1>
-        <p className="text-foreground/80">{formatSalePeriod(sale)}</p>
+        <p className="text-foreground/80">{formatPublicSalePeriod(sale)}</p>
         {sale.description !== null ? (
           <p className="whitespace-pre-wrap">{sale.description}</p>
         ) : null}

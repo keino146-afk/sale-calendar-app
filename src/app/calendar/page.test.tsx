@@ -335,6 +335,22 @@ describe("CalendarPage", () => {
     expect(section).not.toContain("/sales/");
   });
 
+  it("shows a timed sale's last running minute but keeps its days unchanged", async () => {
+    // 2026-10-13 00:00 JST to 2026-10-16 00:00 JST (exclusive)
+    const timed = makeSale("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "先行セール", "2026-10-12T15:00:00Z", "2026-10-15T15:00:00Z");
+    listPublishedSaleEvents.mockResolvedValue([timed]);
+
+    const lastDay = await renderCalendar({ year: "2026", month: "10", day: "2026-10-15" });
+    // Bar on 10/13 (Tue) to 10/15 (Thu) only, as before.
+    expect(segments(lastDay)).toEqual([{ id: timed.id, startColumn: 2, span: 3, lane: 0 }]);
+    expect(selectedSection(lastDay)).toContain("10/13 00:00 〜 10/15 23:59");
+    expect(lastDay).not.toContain("10/16 00:00");
+
+    // The exclusive end day is still not part of the sale.
+    const endDay = await renderCalendar({ year: "2026", month: "10", day: "2026-10-16" });
+    expect(selectedSection(endDay)).toContain("0件のセール");
+  });
+
   it("draws sale bars per week and lists only this month's sales", async () => {
     listPublishedSaleEvents.mockResolvedValue([OCTOBER_SALE, SEPTEMBER_GRID_SALE]);
 

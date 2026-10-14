@@ -200,6 +200,22 @@ describe("AdminPage", () => {
     expect(mocks.countPendingSaleEvents).toHaveBeenCalledTimes(1);
   });
 
+  it("links to the public calendar in the same tab, between the candidates link and the status tabs", async () => {
+    const html = await render();
+
+    expect(html).toMatch(/<a [^>]*href="\/calendar"[^>]*>公開カレンダーを見る<\/a>/);
+    expect(html).not.toContain('href="/admin/calendar"');
+    expect(html.match(/公開カレンダーを見る<\/a>/g)).toHaveLength(1);
+    const linkStart = html.lastIndexOf("<a", html.indexOf("公開カレンダーを見る"));
+    expect(html.slice(linkStart, html.indexOf("公開カレンダーを見る"))).not.toContain("target=");
+    expect(html.indexOf("収集候補")).toBeLessThan(html.indexOf("公開カレンダーを見る"));
+    expect(html.indexOf("公開カレンダーを見る")).toBeLessThan(html.indexOf('aria-label="状態で絞り込み"'));
+    // Existing controls stay.
+    expect(html).toContain("新しいセールを登録");
+    expect(html).toContain("ログアウト</button>");
+    expect(html).toContain('href="/admin?status=pending_review"');
+  });
+
   it("lists sales in DAL order with status, period, checked date and detail links", async () => {
     mocks.listAdminSaleEvents.mockResolvedValue([PENDING_A, PENDING_B]);
 

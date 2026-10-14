@@ -40,6 +40,7 @@ export function classifySales<T extends SaleTiming>(
 
 // Date-only: the exclusive end (next day 00:00 JST) is shown as the last day.
 // Timed: the stored exclusive end boundary is shown as-is (no -1 minute).
+// Admin pages use this so the stored boundary stays visible there.
 export function formatSalePeriod(sale: SaleTiming): string {
   const startsAt = new Date(sale.startsAt);
   const endsAt = new Date(sale.endsAt);
@@ -51,4 +52,19 @@ export function formatSalePeriod(sale: SaleTiming): string {
   }
 
   return `${formatJstMonthDayTime(startsAt)} 〜 ${formatJstMonthDayTime(endsAt)}`;
+}
+
+// Public pages: the last minute the sale is still running. A timed sale's
+// exclusive end (e.g. 10/16 00:00) is shown as the minute before it
+// (10/15 23:59), matching how retailers announce the end. Date-only sales are
+// shown exactly as in formatSalePeriod. Display only: the stored times and
+// every range calculation keep the exclusive end.
+export function formatPublicSalePeriod(sale: SaleTiming): string {
+  if (sale.isDateOnly) return formatSalePeriod(sale);
+
+  const startsAt = new Date(sale.startsAt);
+  // 1 ms before the exclusive end, shown at minute precision: the last minute
+  // that still falls inside the sale.
+  const lastMinute = new Date(new Date(sale.endsAt).getTime() - 1);
+  return `${formatJstMonthDayTime(startsAt)} 〜 ${formatJstMonthDayTime(lastMinute)}`;
 }
