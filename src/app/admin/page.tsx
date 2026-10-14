@@ -72,6 +72,13 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
           >
             収集候補
           </Link>
+          {/* The public page, to check how published sales look to visitors. */}
+          <Link
+            href="/calendar"
+            className="rounded-2xl bg-white px-4 py-3 text-center text-[15px] font-semibold text-blue-600 shadow-sm ring-1 ring-black/5"
+          >
+            公開カレンダーを見る
+          </Link>
           <nav aria-label="状態で絞り込み" className="-mx-4 overflow-x-auto px-4">
             <ul className="flex w-max gap-2">
               {ADMIN_SALE_STATUSES.map((value) => (
