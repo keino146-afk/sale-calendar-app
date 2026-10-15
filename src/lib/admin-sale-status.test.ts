@@ -3,6 +3,8 @@ import {
   ADMIN_SALE_STATUSES,
   ADMIN_SALE_STATUS_LABELS,
   DEFAULT_ADMIN_SALE_STATUS,
+  EDITABLE_SALE_STATUSES,
+  isEditableSaleStatus,
   parseAdminSaleStatus,
 } from "./admin-sale-status";
 
@@ -31,5 +33,13 @@ describe("parseAdminSaleStatus", () => {
       rejected: "却下",
       archived: "終了",
     });
+  });
+});
+
+describe("isEditableSaleStatus", () => {
+  it("allows editing pending, published and rejected sales but never archived ones", () => {
+    expect(EDITABLE_SALE_STATUSES).toEqual(["pending_review", "published", "rejected"]);
+    expect(ADMIN_SALE_STATUSES.filter(isEditableSaleStatus)).toEqual(["pending_review", "published", "rejected"]);
+    expect(isEditableSaleStatus("archived")).toBe(false);
   });
 });

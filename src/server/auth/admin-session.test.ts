@@ -18,7 +18,7 @@ const { createAdminSupabaseClient, redirect, REDIRECT } = vi.hoisted(() => {
 vi.mock("@/server/supabase/admin-client", () => ({ createAdminSupabaseClient }));
 vi.mock("next/navigation", () => ({ redirect }));
 
-const { requireAdmin, isCurrentUserAdmin, ADMIN_LOGIN_PATH, ADMIN_LOGIN_FAILED_PATH } =
+const { requireAdmin, isCurrentUserAdmin, isAdminRequest, ADMIN_LOGIN_PATH, ADMIN_LOGIN_FAILED_PATH } =
   await import("./admin-session");
 
 // Fake ids only.
@@ -139,5 +139,41 @@ describe("isCurrentUserAdmin", () => {
   it("is true only for a boolean true result", async () => {
     expect(await isCurrentUserAdmin(fakeClient({ isAdmin: true }) as never)).toBe(true);
     expect(await isCurrentUserAdmin(fakeClient({ isAdmin: false }) as never)).toBe(false);
+  });
+});
+
+describe("isAdminRequest", () => {
+  it("is true only for an admin verified through current_user_is_admin", async () => {
+    const client = fakeClient();
+    createAdminSupabaseClient.mockResolvedValue(client);
+
+    expect(await isAdminRequest()).toBe(true);
+    expect(client.auth.getUser).toHaveBeenCalledTimes(1);
+    expect(client.rpc).toHaveBeenCalledWith("current_user_is_admin");
+  });
+
+  it.each([
+    ["an anonymous visitor", { user: null }],
+    ["an unusable session", { user: null, userError: new Error("expired") }],
+    ["a signed-in non-admin (e.g. a collector)", { isAdmin: false }],
+    ["a failed admin check", { isAdmin: null, rpcError: { code: "PGRST000" } }],
+  ])("is false for %s, without redirecting or signing out", async (_label, options) => {
+    const client = fakeClient(options);
+    createAdminSupabaseClient.mockResolvedValue(client);
+
+    expect(await isAdminRequest()).toBe(false);
+    expect(redirect).not.toHaveBeenCalled();
+    expect(client.auth.signOut).not.toHaveBeenCalled();
+  });
+
+  it("is false when auth is unavailable or throws", async () => {
+    createAdminSupabaseClient.mockRejectedValue(new Error("config"));
+    expect(await isAdminRequest()).toBe(false);
+
+    const client = fakeClient();
+    client.auth.getUser.mockRejectedValue(new Error("network"));
+    createAdminSupabaseClient.mockResolvedValue(client);
+    expect(await isAdminRequest()).toBe(false);
+    expect(redirect).not.toHaveBeenCalled();
   });
 });

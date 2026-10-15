@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
+import { AdminHomeLink } from "@/components/AdminHomeLink";
 import { RetailerFilter } from "@/components/RetailerFilter";
 import { SaleList, type SaleListItem } from "@/components/SaleList";
 import { listActiveRetailers, type RetailerDto } from "@/server/data/retailers";
@@ -54,9 +55,13 @@ export default async function Home({ searchParams }: PageProps<"/">) {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-4 pb-12 pt-6">
-      <header className="flex flex-col items-center gap-1 text-center">
+      <header className="relative flex flex-col items-center gap-1 text-center">
         <h1 className="text-2xl font-bold">セールカレンダー</h1>
         <p className="text-xs text-foreground/60">楽天市場・Amazon・Qoo10のセール情報</p>
+        {/* Shown to admins only, after a check; positioned so it never shifts the layout. */}
+        <div className="absolute right-0 top-0">
+          <AdminHomeLink />
+        </div>
       </header>
       <Link
         href="/calendar"

@@ -20,3 +20,11 @@ export function isAdminSaleStatus(value: unknown): value is AdminSaleStatus {
 export function parseAdminSaleStatus(value: string | string[] | undefined): AdminSaleStatus {
   return isAdminSaleStatus(value) ? value : DEFAULT_ADMIN_SALE_STATUS;
 }
+
+// Statuses whose content an admin may edit. Archived sales stay as they were
+// (the database refuses to change them as well).
+export const EDITABLE_SALE_STATUSES = ["pending_review", "published", "rejected"] as const satisfies readonly AdminSaleStatus[];
+
+export function isEditableSaleStatus(status: AdminSaleStatus): boolean {
+  return (EDITABLE_SALE_STATUSES as readonly AdminSaleStatus[]).includes(status);
+}

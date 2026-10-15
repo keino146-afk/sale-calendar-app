@@ -12,6 +12,7 @@ import {
 } from "@/server/data/admin-sale-events";
 import { formatJstDateTime } from "@/lib/jst";
 import { formatSalePeriod } from "@/lib/sale-display";
+import { isEditableSaleStatus } from "@/lib/admin-sale-status";
 
 type LoadResult =
   | { ok: true; sale: AdminSaleEventDto | null; rejectReason: string | null }
@@ -24,6 +25,7 @@ const DONE_MESSAGES: Record<string, string> = {
   rejected: "却下しました",
   archived: "終了しました",
   reopened: "確認待ちに戻しました",
+  updated: "変更を保存しました",
 };
 
 export default async function AdminSaleDetailPage({
@@ -130,6 +132,14 @@ export default async function AdminSaleDetailPage({
           <p className="break-all text-xs text-foreground/50">{sale.sourceUrl}</p>
         </section>
       </article>
+      {isEditableSaleStatus(sale.status) ? (
+        <Link
+          href={`/admin/sales/${sale.id}/edit`}
+          className="w-full rounded-xl border border-blue-500 bg-white px-4 py-2.5 text-center text-[15px] font-semibold text-blue-600"
+        >
+          編集する
+        </Link>
+      ) : null}
       <LifecycleActions sale={sale} />
     </Shell>
   );

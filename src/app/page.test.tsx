@@ -191,6 +191,23 @@ describe("Home", () => {
     expect(html).not.toContain("10/16 00:00");
   });
 
+  it("reserves a spot for the admin-only link without showing it on the server", async () => {
+    listPublishedSaleEvents.mockResolvedValue([ACTIVE_SALE, UPCOMING_SALE]);
+
+    const html = await renderHome();
+
+    // The Client Component renders nothing until /admin/presence says admin.
+    expect(html).not.toContain("管理画面へ");
+    expect(html).not.toContain('href="/admin"');
+    const spot = html.indexOf('<div class="absolute right-0 top-0">');
+    expect(spot).toBeGreaterThan(html.indexOf("セールカレンダー"));
+    expect(spot).toBeLessThan(html.indexOf("カレンダーを見る"));
+    // Existing content stays.
+    expect(html).toContain('href="/calendar"');
+    expect(html).toContain("開催中セール");
+    expect(html).toContain("近日セール");
+  });
+
   it("renders empty states", async () => {
     const html = await renderHome();
 

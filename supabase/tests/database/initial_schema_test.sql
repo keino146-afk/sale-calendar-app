@@ -9,7 +9,24 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(123);
+select plan(124);
+
+-- Since Phase 6F authenticated has no UPDATE privilege on sale_events
+-- (content edits go through public.update_sale_event). The trigger behaviour
+-- below is exercised through this test-only owner helper, which keeps the
+-- caller's JWT claims (audit actor). It exists only inside this rolled-back
+-- transaction.
+create function public.test_owner_exec(p_sql text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  execute p_sql;
+end;
+$$;
+grant execute on function public.test_owner_exec(text) to authenticated;
 
 -- ============================================================
 -- Fixtures (owner context)
@@ -389,11 +406,10 @@ select throws_ok(
   '42501', null, 'non-admin: sale_events insert is rejected by RLS'
 );
 
--- RLS hides the row from UPDATE, so this affects 0 rows (checked below as owner).
-select lives_ok(
+select throws_ok(
   $$update public.sale_events set title = 'Non-admin Update'
     where id = '10000000-0000-4000-8000-000000000001'$$,
-  'non-admin: content update statement runs but matches no rows'
+  '42501', null, 'non-admin: direct content update is denied (no UPDATE privilege)'
 );
 
 select throws_ok(
@@ -477,10 +493,15 @@ select is(
   'create|00000000-0000-4000-8000-00000000a001|<null>', 'admin insert: create audit with admin actor and null note'
 );
 
-select lives_ok(
+select throws_ok(
   $$update public.sale_events set description = 'Updated public description'
     where title = 'Admin Lifecycle Event'$$,
-  'admin: content update succeeds'
+  '42501', null, 'admin: direct content update is denied (update_sale_event only)'
+);
+select lives_ok(
+  $$select public.test_owner_exec($q$update public.sale_events set description = 'Updated public description'
+    where title = 'Admin Lifecycle Event'$q$)$$,
+  'trigger path: content update succeeds'
 );
 select is(
   (select a.action || '|' || a.actor_user_id::text || '|' || coalesce(a.note, '<null>')
@@ -553,8 +574,8 @@ select is(
 
 -- Archived immutability.
 select throws_ok(
-  $$update public.sale_events set description = 'Edit after archive'
-    where title = 'Admin Lifecycle Event'$$,
+  $$select public.test_owner_exec($q$update public.sale_events set description = 'Edit after archive'
+    where title = 'Admin Lifecycle Event'$q$)$$,
   '55000', null, 'admin: content edit on archived event fails with 55000'
 );
 select throws_ok(
@@ -642,8 +663,8 @@ select ok(
 
 -- Same transaction, after reject: content edit on the rejected row (no RPC clears the note).
 select lives_ok(
-  $$update public.sale_events set description = 'Edited while rejected'
-    where title = 'Admin Reject Event'$$,
+  $$select public.test_owner_exec($q$update public.sale_events set description = 'Edited while rejected'
+    where title = 'Admin Reject Event'$q$)$$,
   'admin: content edit on rejected event succeeds'
 );
 select is(
@@ -692,8 +713,8 @@ select is(
 -- Rejected rows are excluded from dedup: editing R (rejected) to a key that
 -- matches active P does not raise 23505.
 select lives_ok(
-  $$update public.sale_events set title = 'DEDUP  REJECTED  EVENT', starts_at = '2027-03-01 11:00+09'
-    where id = '10000000-0000-4000-8000-000000000020'$$,
+  $$select public.test_owner_exec($q$update public.sale_events set title = 'DEDUP  REJECTED  EVENT', starts_at = '2027-03-01 11:00+09'
+    where id = '10000000-0000-4000-8000-000000000020'$q$)$$,
   'rejected row content edit to an active dedup key does not raise 23505'
 );
 select is(
@@ -721,8 +742,8 @@ select is(
 
 -- Published content edit collision.
 select throws_ok(
-  $$update public.sale_events set title = 'Collision Pending'
-    where id = '10000000-0000-4000-8000-000000000030'$$,
+  $$select public.test_owner_exec($q$update public.sale_events set title = 'Collision Pending'
+    where id = '10000000-0000-4000-8000-000000000030'$q$)$$,
   '23505', null, 'published content edit colliding with an active row fails with 23505'
 );
 select is(
@@ -732,8 +753,8 @@ select is(
 
 -- Pending content edit collision.
 select throws_ok(
-  $$update public.sale_events set title = 'collision published'
-    where id = '10000000-0000-4000-8000-000000000031'$$,
+  $$select public.test_owner_exec($q$update public.sale_events set title = 'collision published'
+    where id = '10000000-0000-4000-8000-000000000031'$q$)$$,
   '23505', null, 'pending_review content edit colliding with an active row fails with 23505'
 );
 
