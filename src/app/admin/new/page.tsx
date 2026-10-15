@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { createSaleCandidateAction } from "./actions";
+import { Field, INPUT_CLASS, SaleContentFields } from "../_components/SaleContentFields";
 import { requireAdmin } from "@/server/auth/admin-session";
 import { listActiveRetailersForAdmin, type AdminRetailerOption } from "@/server/data/admin-sale-create";
 import {
@@ -13,7 +13,6 @@ import {
   DESCRIPTION_MAX_LENGTH,
   parsePeriodMode,
   saleFormDefaultsFromPeriod,
-  SOURCE_URL_MAX_LENGTH,
   toJstDateTimeLocal,
   type PeriodMode,
   type SaleFormDefaults,
@@ -33,8 +32,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   candidate_state: "この収集候補はすでに登録済みか、登録できない状態です",
   failed: "登録できませんでした",
 };
-
-const INPUT_CLASS = "rounded-xl border border-black/10 px-3 py-2 text-base";
 
 export default async function AdminNewSalePage({ searchParams }: PageProps<"/admin/new">) {
   // connection() and requireAdmin() throw; keep them outside try/catch.
@@ -137,41 +134,6 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
   );
 }
 
-function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      {label}
-      {children}
-      {help !== undefined ? <span className="text-xs text-foreground/60">{help}</span> : null}
-    </label>
-  );
-}
-
-function ModeLink({
-  value,
-  current,
-  candidateId,
-  children,
-}: {
-  value: PeriodMode;
-  current: PeriodMode;
-  candidateId: string | null;
-  children: ReactNode;
-}) {
-  const selected = value === current;
-  return (
-    <Link
-      href={`/admin/new?mode=${value}${candidateId === null ? "" : `&candidateId=${candidateId}`}`}
-      aria-current={selected ? "page" : undefined}
-      className={`flex-1 rounded-full px-4 py-1.5 text-center text-sm ${
-        selected ? "bg-blue-500 font-semibold text-white" : "border border-black/10 bg-white"
-      }`}
-    >
-      {children}
-    </Link>
-  );
-}
-
 function SaleForm({
   mode,
   retailers,
@@ -207,65 +169,12 @@ function SaleForm({
           ))}
         </select>
       </Field>
-      <Field label="タイトル">
-        <input type="text" name="title" required maxLength={400} defaultValue={defaults?.title} className={INPUT_CLASS} />
-      </Field>
-      <Field label="説明（任意）">
-        <textarea
-          name="description"
-          rows={3}
-          maxLength={DESCRIPTION_MAX_LENGTH}
-          defaultValue={defaults?.description}
-          className={INPUT_CLASS}
-        />
-      </Field>
-      <nav aria-label="期間の種類" className="flex gap-2">
-        <ModeLink value="date" current={mode} candidateId={candidateId}>
-          日付のみ
-        </ModeLink>
-        <ModeLink value="datetime" current={mode} candidateId={candidateId}>
-          時刻あり
-        </ModeLink>
-      </nav>
-      {mode === "date" ? (
-        <>
-          <Field label="開始日">
-            <input type="date" name="startDate" required defaultValue={defaults?.startDate} className={INPUT_CLASS} />
-          </Field>
-          <Field label="終了日（この日を含む）">
-            <input type="date" name="endDate" required defaultValue={defaults?.endDate} className={INPUT_CLASS} />
-          </Field>
-        </>
-      ) : (
-        <>
-          <Field label="開始日時（日本時間）">
-            <input type="datetime-local" name="startsAt" required defaultValue={defaults?.startsAt} className={INPUT_CLASS} />
-          </Field>
-          <Field label="終了日時（日本時間・この時刻に終了）">
-            <input type="datetime-local" name="endsAt" required defaultValue={defaults?.endsAt} className={INPUT_CLASS} />
-          </Field>
-        </>
-      )}
-      <Field label="公式ページURL" help="セール情報を確認した公式ページを入力してください">
-        <input
-          type="url"
-          name="sourceUrl"
-          required
-          maxLength={SOURCE_URL_MAX_LENGTH}
-          placeholder="https://"
-          defaultValue={defaults?.sourceUrl}
-          className={INPUT_CLASS}
-        />
-      </Field>
-      <Field label="情報を確認した日時（日本時間）">
-        <input
-          type="datetime-local"
-          name="sourceCheckedAt"
-          required
-          defaultValue={defaults?.sourceCheckedAt ?? checkedAtDefault}
-          className={INPUT_CLASS}
-        />
-      </Field>
+      <SaleContentFields
+        mode={mode}
+        defaults={defaults}
+        checkedAtDefault={checkedAtDefault}
+        modeHref={(value) => `/admin/new?mode=${value}${candidateId === null ? "" : `&candidateId=${candidateId}`}`}
+      />
       <button type="submit" className="rounded-xl bg-blue-500 px-4 py-2.5 text-[15px] font-semibold text-white">
         登録する
       </button>

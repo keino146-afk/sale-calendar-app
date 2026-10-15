@@ -195,7 +195,7 @@ describe("AdminSaleDetailPage", () => {
     expect(mocks.notFound).not.toHaveBeenCalled();
   });
 
-  it("never renders internal fields, identity, edit or create controls", async () => {
+  it("never renders internal fields, identity, inline edit or create controls", async () => {
     mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, title_key: "internal-key", start_date_jst: "2026-11-05" });
 
     const html = await render();
@@ -204,7 +204,40 @@ describe("AdminSaleDetailPage", () => {
       expect(html).not.toContain(hidden);
     }
     expect(html).not.toMatch(/eyJ|access_token|refresh_token/);
-    for (const label of ["編集", "新規", "作成"]) expect(html).not.toContain(label);
+    for (const label of ["新規", "作成"]) expect(html).not.toContain(label);
+    // Editing happens on its own page: the only 編集 here is that link, and
+    // no editable field is rendered on the detail page.
+    expect(html.match(/編集/g)).toHaveLength(1);
+    expect(html).not.toMatch(/<input(?![^>]*type="hidden")|<textarea|<select/);
+  });
+
+  it.each([
+    ["pending_review", true],
+    ["published", true],
+    ["rejected", true],
+    ["archived", false],
+  ])("links to the edit page for %s: %s", async (status, editable) => {
+    mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, status });
+    mocks.getLatestRejectReason.mockResolvedValue("理由");
+
+    const html = await render();
+
+    const link = `<a class="w-full rounded-xl border border-blue-500 bg-white px-4 py-2.5 text-center text-[15px] font-semibold text-blue-600" href="/admin/sales/${SALE_ID}/edit">編集する</a>`;
+    if (editable) {
+      expect(html).toContain(link);
+      // Kept apart from the status actions.
+      expect(html.indexOf(link)).toBeLessThan(html.indexOf('aria-label="操作"'));
+      expect(actionLabels(html)).not.toContain("編集する");
+    } else {
+      expect(html).not.toContain("/edit");
+      expect(html).not.toContain("編集する");
+    }
+  });
+
+  it("confirms a saved edit", async () => {
+    mocks.getAdminSaleEvent.mockResolvedValue(SALE);
+
+    expect(await render(SALE_ID, { done: "updated" })).toContain("変更を保存しました");
   });
 
   it.each([

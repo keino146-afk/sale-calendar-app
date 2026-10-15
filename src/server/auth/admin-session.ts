@@ -62,6 +62,18 @@ async function checkAdmin(): Promise<AdminCheck> {
     : { kind: "denied", supabase };
 }
 
+// Read-only "is this request an admin?" for /admin/presence: the same
+// database-backed check as requireAdmin(), but it never redirects and never
+// signs anyone out. Any failure counts as "not an admin".
+export async function isAdminRequest(): Promise<boolean> {
+  try {
+    return (await checkAdmin()).kind === "admin";
+  } catch (error) {
+    console.error(`[admin] presence check failed: ${errorName(error)}`);
+    return false;
+  }
+}
+
 // Gate for every admin page and Server Action. Returns a server-only client
 // acting as the admin; no user id, email or token is returned for display.
 export async function requireAdmin(): Promise<AdminSupabaseClient> {

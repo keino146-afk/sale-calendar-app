@@ -128,6 +128,9 @@ isOneToOne: false
                            },
 "submit_collection_candidate":
 { Args: { "p_content_hash": string,"p_description": string,"p_ends_at": string,"p_evidence_excerpt": string,"p_external_key": string,"p_is_date_only": boolean,"p_parser_version": string,"p_retailer_id": string,"p_source_checked_at": string,"p_source_id": string,"p_source_url": string,"p_starts_at": string,"p_title": string }; Returns: string
+                           },
+"update_sale_event":
+{ Args: { "p_description": string,"p_ends_at": string,"p_expected_updated_at": string,"p_id": string,"p_is_date_only": boolean,"p_published_confirmed": boolean,"p_source_checked_at": string,"p_source_url": string,"p_starts_at": string,"p_title": string }; Returns: undefined
                            }
           }
           Enums: {

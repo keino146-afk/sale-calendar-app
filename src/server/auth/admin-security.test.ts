@@ -54,8 +54,32 @@ describe("admin security boundary", () => {
     expect(await filesMatching(APP_CODE, /createBrowserClient/)).toEqual([]);
   });
 
-  it("has no Client Components", async () => {
-    expect(await filesMatching(APP_CODE, /^\s*["']use client["']/m)).toEqual([]);
+  it("has exactly one Client Component: the admin home link", async () => {
+    // Approved exception (Phase 6F add-on). Any other "use client" fails.
+    expect(await filesMatching(APP_CODE, /^\s*["']use client["']/m)).toEqual(["src/components/AdminHomeLink.tsx"]);
+  });
+
+  it("keeps the admin home link free of server, Supabase, env and storage code", async () => {
+    const code = await readFile("src/components/AdminHomeLink.tsx", "utf8");
+    const imports = [...code.matchAll(/^import[^;]*from\s+["']([^"']+)["']/gm)].map(([, source]) => source);
+    expect(imports.sort()).toEqual(["next/link", "react"]);
+    expect(code).not.toMatch(/supabase|@\/server|process\.env|NEXT_PUBLIC|localStorage|sessionStorage|document\.cookie|service_role/i);
+    // It asks only /admin/presence, never follows a redirect and never
+    // sends credentials cross-origin.
+    expect([...code.matchAll(/["'`](\/[a-z/]*)["'`]/g)].map(([, path]) => path).sort()).toEqual(["/admin", "/admin/presence"]);
+    expect(code).toContain('redirect: "error"');
+    expect(code).toContain('credentials: "same-origin"');
+    expect(code).not.toContain('credentials: "include"');
+  });
+
+  it("answers admin presence read-only, without redirects or identity", async () => {
+    const routes = APP_CODE.filter((file) => /\/route\.(ts|tsx)$/.test(file));
+    expect(routes).toEqual(["src/app/admin/presence/route.ts"]);
+    const code = (await readFile("src/app/admin/presence/route.ts", "utf8")).replace(/^\s*\/\/.*$/gm, "");
+    expect([...code.matchAll(/export\s+(?:async\s+)?function\s+(\w+)/g)].map(([, name]) => name)).toEqual(["GET"]);
+    expect(code).toContain("isAdminRequest()");
+    expect(code).not.toMatch(/requireAdmin|redirect\(|signOut|\.rpc\(|\.from\(|user\.id|email/);
+    expect(code).toContain('"Cache-Control": "private, no-store"');
   });
 
   it("imports Supabase packages only from src/server", async () => {
@@ -113,6 +137,7 @@ describe("admin security boundary", () => {
       "reject_sale_event",
       "archive_sale_event",
       "reopen_sale_event",
+      "update_sale_event",
     ]);
     const used = new Set<string>();
     for (const file of APP_CODE) {
@@ -162,6 +187,28 @@ describe("admin security boundary", () => {
     const importer = await readFile("src/server/data/admin-candidate-import.ts", "utf8");
     expect(importer.match(/\.rpc\(/g)).toHaveLength(1);
     expect(importer).not.toMatch(/\.(from|insert|update|upsert|delete)\(/);
+  });
+
+  it("edits sale content only through the update RPC, from one data module", async () => {
+    // The only content change path is public.update_sale_event, called from
+    // one data module that makes no other write (the .update( ban above stays).
+    expect(await filesMatching(APP_CODE, /update_sale_event/)).toEqual([
+      "src/server/data/admin-sale-edit.ts",
+      "src/server/supabase/app-database.ts",
+      "src/server/supabase/database.types.ts",
+    ]);
+    const editor = await readFile("src/server/data/admin-sale-edit.ts", "utf8");
+    expect(editor.match(/\.rpc\(/g)).toHaveLength(1);
+    expect(editor).not.toMatch(/\.(insert|update|upsert|delete)\(/);
+    // Only the edit action uses the data module, and it never sends a status
+    // or retailer from the form.
+    expect(await filesMatching(APP_CODE, /admin-sale-edit"/)).toEqual([
+      "src/app/admin/sales/[saleId]/edit/actions.ts",
+      "src/app/admin/sales/[saleId]/edit/page.tsx",
+    ]);
+    const action = await readFile("src/app/admin/sales/[saleId]/edit/actions.ts", "utf8");
+    expect(action).not.toMatch(/formData\.get\(["'](status|retailerId)["']\)/);
+    expect(editor).not.toMatch(/p_status|p_retailer_id/);
   });
 
   it("never reads source policies directly (database check only)", async () => {

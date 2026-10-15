@@ -127,6 +127,17 @@ export function parseSaleCandidateForm(formData: FormData, mode: PeriodMode): Re
   const retailerId = text(formData, "retailerId");
   if (retailerId === null || !UUID_PATTERN.test(retailerId)) return { ok: false, error: "retailer" };
 
+  const content = parseSaleContentForm(formData, mode);
+  return content.ok ? { ok: true, value: { retailerId, ...content.value } } : content;
+}
+
+// The content fields shared by registration and editing (everything except
+// the retailer, which an edit never changes).
+export type SaleContentInput = Omit<SaleCandidateInput, "retailerId">;
+
+type ContentResult = { ok: true; value: SaleContentInput } | { ok: false; error: FormErrorCode };
+
+export function parseSaleContentForm(formData: FormData, mode: PeriodMode): ContentResult {
   const rawTitle = text(formData, "title");
   if (rawTitle === null || !isValidTitle(rawTitle)) return { ok: false, error: "title" };
   const title = rawTitle.trim();
@@ -163,7 +174,6 @@ export function parseSaleCandidateForm(formData: FormData, mode: PeriodMode): Re
   return {
     ok: true,
     value: {
-      retailerId,
       title,
       description,
       startsAt,
