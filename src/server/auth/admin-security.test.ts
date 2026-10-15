@@ -54,8 +54,32 @@ describe("admin security boundary", () => {
     expect(await filesMatching(APP_CODE, /createBrowserClient/)).toEqual([]);
   });
 
-  it("has no Client Components", async () => {
-    expect(await filesMatching(APP_CODE, /^\s*["']use client["']/m)).toEqual([]);
+  it("has exactly one Client Component: the admin home link", async () => {
+    // Approved exception (Phase 6F add-on). Any other "use client" fails.
+    expect(await filesMatching(APP_CODE, /^\s*["']use client["']/m)).toEqual(["src/components/AdminHomeLink.tsx"]);
+  });
+
+  it("keeps the admin home link free of server, Supabase, env and storage code", async () => {
+    const code = await readFile("src/components/AdminHomeLink.tsx", "utf8");
+    const imports = [...code.matchAll(/^import[^;]*from\s+["']([^"']+)["']/gm)].map(([, source]) => source);
+    expect(imports.sort()).toEqual(["next/link", "react"]);
+    expect(code).not.toMatch(/supabase|@\/server|process\.env|NEXT_PUBLIC|localStorage|sessionStorage|document\.cookie|service_role/i);
+    // It asks only /admin/presence, never follows a redirect and never
+    // sends credentials cross-origin.
+    expect([...code.matchAll(/["'`](\/[a-z/]*)["'`]/g)].map(([, path]) => path).sort()).toEqual(["/admin", "/admin/presence"]);
+    expect(code).toContain('redirect: "error"');
+    expect(code).toContain('credentials: "same-origin"');
+    expect(code).not.toContain('credentials: "include"');
+  });
+
+  it("answers admin presence read-only, without redirects or identity", async () => {
+    const routes = APP_CODE.filter((file) => /\/route\.(ts|tsx)$/.test(file));
+    expect(routes).toEqual(["src/app/admin/presence/route.ts"]);
+    const code = (await readFile("src/app/admin/presence/route.ts", "utf8")).replace(/^\s*\/\/.*$/gm, "");
+    expect([...code.matchAll(/export\s+(?:async\s+)?function\s+(\w+)/g)].map(([, name]) => name)).toEqual(["GET"]);
+    expect(code).toContain("isAdminRequest()");
+    expect(code).not.toMatch(/requireAdmin|redirect\(|signOut|\.rpc\(|\.from\(|user\.id|email/);
+    expect(code).toContain('"Cache-Control": "private, no-store"');
   });
 
   it("imports Supabase packages only from src/server", async () => {
