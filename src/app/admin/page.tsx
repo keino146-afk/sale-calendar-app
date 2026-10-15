@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { AdminHeader } from "./_components/AdminHeader";
+import { PastEndBadge } from "./_components/PastEndBadge";
 import { StatusBadge } from "./_components/StatusBadge";
 import { requireAdmin } from "@/server/auth/admin-session";
 import {
@@ -11,6 +12,7 @@ import {
 import {
   ADMIN_SALE_STATUSES,
   ADMIN_SALE_STATUS_LABELS,
+  isSalePastEnd,
   parseAdminSaleStatus,
   type AdminSaleStatus,
 } from "@/lib/admin-sale-status";
@@ -30,6 +32,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   // requireAdmin() redirects by throwing. No data is read before the guard.
   await connection();
   const supabase = await requireAdmin();
+  const now = new Date();
 
   const status = parseAdminSaleStatus((await searchParams).status);
 
@@ -98,14 +101,14 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
               ))}
             </ul>
           </nav>
-          <AdminSaleList sales={sales} emptyText={EMPTY_TEXT[status]} />
+          <AdminSaleList sales={sales} emptyText={EMPTY_TEXT[status]} now={now} />
         </>
       )}
     </main>
   );
 }
 
-function AdminSaleList({ sales, emptyText }: { sales: AdminSaleEventDto[]; emptyText: string }) {
+function AdminSaleList({ sales, emptyText, now }: { sales: AdminSaleEventDto[]; emptyText: string; now: Date }) {
   if (sales.length === 0) {
     return (
       <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm text-foreground/60 shadow-sm">
@@ -129,6 +132,7 @@ function AdminSaleList({ sales, emptyText }: { sales: AdminSaleEventDto[]; empty
                   {sale.retailer.name}
                 </span>
                 <StatusBadge status={sale.status} />
+                {isSalePastEnd(sale, now) ? <PastEndBadge /> : null}
               </span>
               <span className="truncate text-[15px] font-semibold">{sale.title}</span>
               <span className="text-xs text-foreground/60">{formatSalePeriod(sale)}</span>

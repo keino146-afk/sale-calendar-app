@@ -273,3 +273,56 @@ describe("AdminPage", () => {
     expect(html.match(/<form/g)).toHaveLength(1);
   });
 });
+
+describe("AdminPage past-end badge", () => {
+  // sale() runs 2026-11-01 to 2026-11-04 00:00 JST (date-only, exclusive end 2026-11-03T15:00Z).
+  async function renderAt(now: string, sales: unknown[], status: string) {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    mocks.listAdminSaleEvents.mockResolvedValue(sales);
+    try {
+      return await render({ status });
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  function badgeCount(html: string) {
+    return html.split('data-past-end="true"').length - 1;
+  }
+
+  it("flags only the published sale whose end has passed", async () => {
+    const ended = sale("dddddddd-dddd-4ddd-8ddd-dddddddddddd", "終わった公開", "published");
+    const running = sale("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "開催中の公開", "published", {
+      endsAt: "2026-11-20T15:00:00Z",
+    });
+
+    const html = await renderAt("2026-11-03T15:00:00Z", [ended, running], "published");
+
+    expect(badgeCount(html)).toBe(1);
+    const items = html.split("<li").slice(1);
+    expect(items.find((item) => item.includes("終わった公開"))).toContain("期間切れ");
+    expect(items.find((item) => item.includes("開催中の公開"))).not.toContain("期間切れ");
+    expect(items.find((item) => item.includes("終わった公開"))).toContain("公開中");
+  });
+
+  it("flags a pending sale whose end has passed but not one still running or upcoming", async () => {
+    const ended = sale("dddddddd-dddd-4ddd-8ddd-dddddddddddd", "古い確認待ち", "pending_review");
+    const future = sale("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "先の確認待ち", "pending_review", {
+      startsAt: "2026-12-01T15:00:00Z",
+      endsAt: "2026-12-02T15:00:00Z",
+    });
+
+    expect(badgeCount(await renderAt("2026-11-03T14:59:59.999Z", [ended, future], "pending_review"))).toBe(0);
+    const html = await renderAt("2026-11-03T15:00:00Z", [ended, future], "pending_review");
+    expect(badgeCount(html)).toBe(1);
+    expect(html).toContain("確認待ち");
+  });
+
+  it.each(["rejected", "archived"])("never flags %s sales", async (status) => {
+    const html = await renderAt("2026-12-31T00:00:00Z", [sale("dddddddd-dddd-4ddd-8ddd-dddddddddddd", "済み", status)], status);
+
+    expect(badgeCount(html)).toBe(0);
+    expect(html).not.toContain("期間切れ");
+  });
+});

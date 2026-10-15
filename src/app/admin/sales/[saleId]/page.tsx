@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import type { ReactNode } from "react";
+import { PastEndBadge } from "../../_components/PastEndBadge";
 import { StatusBadge } from "../../_components/StatusBadge";
 import { archiveSaleAction, publishSaleAction, reopenSaleAction } from "./actions";
 import { requireAdmin } from "@/server/auth/admin-session";
@@ -12,13 +13,22 @@ import {
 } from "@/server/data/admin-sale-events";
 import { formatJstDateTime } from "@/lib/jst";
 import { formatSalePeriod } from "@/lib/sale-display";
-import { isEditableSaleStatus } from "@/lib/admin-sale-status";
+import { isEditableSaleStatus, isSalePastEnd } from "@/lib/admin-sale-status";
 
 type LoadResult =
   | { ok: true; sale: AdminSaleEventDto | null; rejectReason: string | null }
   | { ok: false };
 
 // Only these fixed messages can be shown; query values are never echoed.
+// Shown when a still-open sale's period has ended. Nothing is changed
+// automatically; the admin decides.
+const PAST_END_NOTICES: Partial<Record<AdminSaleEventDto["status"], string>> = {
+  published:
+    "終了日時を過ぎています。公開ページでは「終了しました」と表示されています。必要に応じて「終了する」を押してください。",
+  pending_review:
+    "終了日時を過ぎています。このまま公開すると、公開ページでは「終了しました」と表示されます。期間を確認してください。",
+};
+
 const DONE_MESSAGES: Record<string, string> = {
   created: "登録しました",
   published: "公開しました",
@@ -64,9 +74,19 @@ export default async function AdminSaleDetailPage({
   const { sale, rejectReason } = result;
   if (sale === null) notFound();
 
+  const pastEnd = isSalePastEnd(sale, new Date());
+
   const rows: { label: string; value: ReactNode }[] = [
     { label: "ショップ", value: sale.retailer.name },
-    { label: "状態", value: <StatusBadge status={sale.status} /> },
+    {
+      label: "状態",
+      value: (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <StatusBadge status={sale.status} />
+          {pastEnd ? <PastEndBadge /> : null}
+        </span>
+      ),
+    },
     { label: "期間", value: formatSalePeriod(sale) },
     { label: "期間の種類", value: sale.isDateOnly ? "日付のみ" : "時刻あり" },
     {
@@ -96,6 +116,11 @@ export default async function AdminSaleDetailPage({
       {error !== undefined ? (
         <p role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-center text-sm text-red-700">
           操作を完了できませんでした
+        </p>
+      ) : null}
+      {pastEnd ? (
+        <p role="note" data-past-end-notice={sale.status} className="rounded-2xl bg-orange-50 px-4 py-3 text-sm text-orange-900">
+          {PAST_END_NOTICES[sale.status]}
         </p>
       ) : null}
       <article className="flex flex-col gap-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">

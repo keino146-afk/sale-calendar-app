@@ -3,8 +3,10 @@ import {
   classifySales,
   formatPublicSalePeriod,
   formatSalePeriod,
+  getSaleTimingState,
   isSaleActive,
   isSaleUpcoming,
+  SALE_TIMING_LABELS,
   UPCOMING_DAYS,
 } from "./sale-display";
 
@@ -172,5 +174,68 @@ describe("formatPublicSalePeriod", () => {
     expect(formatSalePeriod(sale("2026-10-12T15:00:00Z", "2026-10-15T15:00:00Z"))).toBe(
       "10/13 00:00 〜 10/16 00:00",
     );
+  });
+});
+
+describe("getSaleTimingState", () => {
+  // Timed: 2026-10-13 00:00 JST to an exclusive end of 2026-10-16 00:00 JST.
+  const TIMED = sale("2026-10-12T15:00:00.000Z", "2026-10-15T15:00:00.000Z");
+  const at = (iso: string) => new Date(iso);
+
+  it.each([
+    ["one second before the start", "2026-10-12T14:59:59.000Z", "upcoming"],
+    ["the exact start", "2026-10-12T15:00:00.000Z", "active"],
+    ["during the sale", "2026-10-14T03:00:00.000Z", "active"],
+    ["one millisecond before the exclusive end", "2026-10-15T14:59:59.999Z", "active"],
+    ["the exact stored end", "2026-10-15T15:00:00.000Z", "ended"],
+    ["one second after the end", "2026-10-15T15:00:01.000Z", "ended"],
+  ])("timed sale at %s", (_label, now, expected) => {
+    expect(getSaleTimingState(TIMED, at(now))).toBe(expected);
+  });
+
+  // Date-only 10/15 only: 10/15 00:00 JST to 10/16 00:00 JST.
+  const ONE_DAY = sale("2026-10-14T15:00:00.000Z", "2026-10-15T15:00:00.000Z", true);
+
+  it.each([
+    ["the previous day 23:59:59 JST", "2026-10-14T14:59:59.000Z", "upcoming"],
+    ["00:00 JST on the day", "2026-10-14T15:00:00.000Z", "active"],
+    ["23:59:59.999 JST on the day", "2026-10-15T14:59:59.999Z", "active"],
+    ["the next day 00:00 JST", "2026-10-15T15:00:00.000Z", "ended"],
+  ])("date-only sale at %s", (_label, now, expected) => {
+    expect(getSaleTimingState(ONE_DAY, at(now))).toBe(expected);
+  });
+
+  it("compares instants regardless of the offset the timestamps are written with", () => {
+    const jstWritten = sale("2026-10-13T00:00:00+09:00", "2026-10-16T00:00:00+09:00");
+    expect(getSaleTimingState(jstWritten, at("2026-10-15T14:59:59.999Z"))).toBe("active");
+    expect(getSaleTimingState(jstWritten, at("2026-10-15T15:00:00.000Z"))).toBe("ended");
+  });
+
+  it("ends at the stored end while the public period still shows the minute before", () => {
+    // Stored end 10/16 00:00 JST is shown as 10/15 23:59 on public pages.
+    expect(formatPublicSalePeriod(TIMED)).toBe("10/13 00:00 〜 10/15 23:59");
+    expect(getSaleTimingState(TIMED, at("2026-10-15T14:59:00.000Z"))).toBe("active");
+    expect(getSaleTimingState(TIMED, at("2026-10-15T15:00:00.000Z"))).toBe("ended");
+  });
+
+  it("agrees with isSaleActive and classifySales at every boundary", () => {
+    const instants = [
+      "2026-10-12T14:59:59.999Z",
+      "2026-10-12T15:00:00.000Z",
+      "2026-10-15T14:59:59.999Z",
+      "2026-10-15T15:00:00.000Z",
+    ].map(at);
+    for (const now of instants) {
+      const state = getSaleTimingState(TIMED, now);
+      expect(isSaleActive(TIMED, now)).toBe(state === "active");
+      const { active, upcoming } = classifySales([TIMED], now);
+      expect(active.length === 1).toBe(state === "active");
+      if (upcoming.length === 1) expect(state).toBe("upcoming");
+      if (state === "ended") expect(active.length + upcoming.length).toBe(0);
+    }
+  });
+
+  it("labels the states for public pages without workflow words", () => {
+    expect(SALE_TIMING_LABELS).toEqual({ upcoming: "開催予定", active: "開催中", ended: "終了しました" });
   });
 });

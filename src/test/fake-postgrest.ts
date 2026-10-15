@@ -14,6 +14,7 @@ const CHAIN_METHODS = [
   "eq",
   "lt",
   "gt",
+  "gte",
   "order",
   "limit",
   "maybeSingle",

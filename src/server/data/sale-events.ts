@@ -116,6 +116,49 @@ export async function listPublishedSaleEvents({
   return data.map((row) => toDto(row, "listPublishedSaleEvents"));
 }
 
+export type GetNextPublishedSaleEventParams = {
+  after: Date;
+  retailerSlug?: string;
+};
+
+// The published event starting earliest at or after `after` (inclusive), or
+// null. Used for the home page's "next sale" hint beyond the upcoming window,
+// so `after` is that window's exclusive end and no event is in both.
+export async function getNextPublishedSaleEvent({
+  after,
+  retailerSlug,
+}: GetNextPublishedSaleEventParams): Promise<SaleEventDto | null> {
+  if (!isValidDate(after)) {
+    throw new InvalidQueryError("Invalid date");
+  }
+  if (retailerSlug !== undefined && !RETAILER_SLUG_PATTERN.test(retailerSlug)) {
+    throw new InvalidQueryError("Invalid retailer");
+  }
+
+  let query = getPublicSupabaseClient()
+    .from("sale_events")
+    .select(SALE_EVENT_COLUMNS)
+    .eq("status", "published")
+    .gte("starts_at", after.toISOString());
+
+  if (retailerSlug !== undefined) {
+    query = query.eq("retailers.slug", retailerSlug);
+  }
+
+  const { data, error } = await query
+    .order("starts_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(1)
+    .overrideTypes<SaleEventRow[], { merge: false }>();
+
+  if (error) {
+    logSupabaseError("getNextPublishedSaleEvent", error);
+    throw new DataAccessError("Failed to load sale events");
+  }
+
+  return data.length === 0 ? null : toDto(data[0], "getNextPublishedSaleEvent");
+}
+
 export async function getPublishedSaleEvent(id: string): Promise<SaleEventDto | null> {
   if (!UUID_PATTERN.test(id)) {
     return null;
