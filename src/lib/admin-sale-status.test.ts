@@ -5,6 +5,8 @@ import {
   DEFAULT_ADMIN_SALE_STATUS,
   EDITABLE_SALE_STATUSES,
   isEditableSaleStatus,
+  isSalePastEnd,
+  PAST_END_FLAGGED_STATUSES,
   parseAdminSaleStatus,
 } from "./admin-sale-status";
 
@@ -41,5 +43,24 @@ describe("isEditableSaleStatus", () => {
     expect(EDITABLE_SALE_STATUSES).toEqual(["pending_review", "published", "rejected"]);
     expect(ADMIN_SALE_STATUSES.filter(isEditableSaleStatus)).toEqual(["pending_review", "published", "rejected"]);
     expect(isEditableSaleStatus("archived")).toBe(false);
+  });
+});
+
+describe("isSalePastEnd", () => {
+  const PERIOD = { startsAt: "2026-11-04T11:00:00Z", endsAt: "2026-11-10T17:00:00Z", isDateOnly: false };
+  const END = new Date("2026-11-10T17:00:00Z");
+  const JUST_BEFORE = new Date("2026-11-10T16:59:59.999Z");
+
+  it.each(["pending_review", "published"] as const)("is true for %s from the exact stored end", (status) => {
+    expect(isSalePastEnd({ ...PERIOD, status }, END)).toBe(true);
+    expect(isSalePastEnd({ ...PERIOD, status }, JUST_BEFORE)).toBe(false);
+  });
+
+  it.each(["rejected", "archived"] as const)("is never true for %s", (status) => {
+    expect(isSalePastEnd({ ...PERIOD, status }, new Date("2027-01-01T00:00:00Z"))).toBe(false);
+  });
+
+  it("only flags pending and published sales", () => {
+    expect(PAST_END_FLAGGED_STATUSES).toEqual(["pending_review", "published"]);
   });
 });

@@ -144,3 +144,71 @@ describe("SaleDetailPage", () => {
     expect(getPublishedSaleEvent).not.toHaveBeenCalled();
   });
 });
+
+describe("SaleDetailPage timing state", () => {
+  // SALE runs 2026-11-04T11:00Z to 2026-11-10T17:00Z (exclusive end).
+  async function renderAt(now: string, sale: typeof SALE = SALE) {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    getPublishedSaleEvent.mockResolvedValue(sale);
+    try {
+      return await renderDetail();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("shows 開催予定 before the start, without the ended notice", async () => {
+    const html = await renderAt("2026-11-04T10:59:59Z");
+
+    expect(html).toContain('data-timing="upcoming"');
+    expect(html).toContain("開催予定");
+    expect(html).not.toContain("このセールは終了しました");
+    expect(html).not.toContain("更新されている場合があります");
+  });
+
+  it("shows 開催中 from the exact start", async () => {
+    const html = await renderAt("2026-11-04T11:00:00Z");
+
+    expect(html).toContain('data-timing="active"');
+    expect(html).toContain("開催中");
+    expect(html).not.toContain("このセールは終了しました");
+  });
+
+  it("shows 終了しました from the exact stored end, keeping the period, link and checked date", async () => {
+    const html = await renderAt("2026-11-10T17:00:00Z");
+
+    expect(html).toContain('data-timing="ended"');
+    expect(html).toContain("終了しました");
+    expect(html).toContain("このセールは終了しました");
+    // The public period still shows the last running minute.
+    expect(html).toContain("11/4 20:00 〜 11/11 01:59");
+    expect(html).toContain("最大50%OFF");
+    expect(html).toContain(`href="${SALE.sourceUrl}"`);
+    expect(html).toContain("公式ページを見る");
+    expect(html).toContain("公式ページの内容は更新されている場合があります");
+    expect(html).toContain("2026/11/1 時点の情報");
+  });
+
+  it("is still 開催中 one millisecond before the stored end", async () => {
+    const html = await renderAt("2026-11-10T16:59:59.999Z");
+
+    expect(html).toContain('data-timing="active"');
+    expect(html).not.toContain("このセールは終了しました");
+  });
+
+  it("ends a date-only sale at the next day's midnight JST", async () => {
+    // 2026-11-11 only: 11/11 00:00 JST to 11/12 00:00 JST.
+    const oneDay = { ...SALE, isDateOnly: true, startsAt: "2026-11-10T15:00:00Z", endsAt: "2026-11-11T15:00:00Z" };
+
+    expect(await renderAt("2026-11-11T14:59:59.999Z", oneDay)).toContain('data-timing="active"');
+    expect(await renderAt("2026-11-11T15:00:00Z", oneDay)).toContain('data-timing="ended"');
+  });
+
+  it("never shows the internal workflow status", async () => {
+    for (const now of ["2026-11-01T00:00:00Z", "2026-11-05T00:00:00Z", "2026-12-01T00:00:00Z"]) {
+      const html = await renderAt(now);
+      expect(html).not.toMatch(/published|公開中/);
+    }
+  });
+});

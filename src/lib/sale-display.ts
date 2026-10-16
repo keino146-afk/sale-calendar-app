@@ -14,9 +14,27 @@ export type SaleTiming = {
   isDateOnly: boolean;
 };
 
-export function isSaleActive(sale: SaleTiming, now: Date): boolean {
+// Where a sale stands in time, derived on display from its period and now.
+// Separate from the workflow status (published, archived, ...), which is
+// never changed by it. Compared as absolute instants against the stored
+// exclusive end, never against the -1 minute shown on public pages.
+export type SaleTimingState = "upcoming" | "active" | "ended";
+
+export const SALE_TIMING_LABELS: Record<SaleTimingState, string> = {
+  upcoming: "開催予定",
+  active: "開催中",
+  ended: "終了しました",
+};
+
+export function getSaleTimingState(sale: SaleTiming, now: Date): SaleTimingState {
   const nowMs = now.getTime();
-  return new Date(sale.startsAt).getTime() <= nowMs && new Date(sale.endsAt).getTime() > nowMs;
+  if (nowMs < new Date(sale.startsAt).getTime()) return "upcoming";
+  if (nowMs < new Date(sale.endsAt).getTime()) return "active";
+  return "ended";
+}
+
+export function isSaleActive(sale: SaleTiming, now: Date): boolean {
+  return getSaleTimingState(sale, now) === "active";
 }
 
 export function isSaleUpcoming(sale: SaleTiming, now: Date, days: number): boolean {
