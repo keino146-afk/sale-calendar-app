@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
+import { cache } from "react";
 import { AdminHomeLink } from "@/components/AdminHomeLink";
 import { RetailerFilter } from "@/components/RetailerFilter";
 import { SaleList, type SaleListItem } from "@/components/SaleList";
@@ -19,9 +20,64 @@ import {
   UPCOMING_DAYS,
 } from "@/lib/sale-display";
 
+type HomeData =
+  | {
+      ok: true;
+      now: Date;
+      upcomingEnd: Date;
+      retailers: RetailerDto[];
+      selectedRetailerSlug: string | undefined;
+      sales: SaleEventDto[];
+    }
+  | { ok: false; now: Date; upcomingEnd: Date };
+
+// A repeated ?retailer= arrives as an array; it never matched a slug before,
+// so it means "all", like every non-string value. Only primitives reach the
+// cached loader, so the page and generateMetadata share one cache entry.
+function normalizeRetailerParam(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+// The page's main read (retailers, then sales in the upcoming window), once
+// per request: React cache() shares the result between generateMetadata and
+// the page and keeps nothing across requests. Failures are returned, not
+// thrown, so both can react to them. The next-sale hint is not part of it.
+const loadHomeData = cache(async (requestedRetailer: string | undefined): Promise<HomeData> => {
+  const now = new Date();
+  // One boundary for both the upcoming window and the next-sale hint, so a
+  // sale is in exactly one of them.
+  const upcomingEnd = addDays(now, UPCOMING_DAYS);
+  try {
+    const retailers = await listActiveRetailers();
+    // Only a known active retailer is used as a filter; anything else means "all".
+    const selectedRetailerSlug = retailers.find((retailer) => retailer.slug === requestedRetailer)?.slug;
+    const sales = await listPublishedSaleEvents({
+      from: now,
+      to: upcomingEnd,
+      retailerSlug: selectedRetailerSlug,
+    });
+    return { ok: true, now, upcomingEnd, retailers, selectedRetailerSlug, sales };
+  } catch (error) {
+    // Log only the error class; messages may contain upstream details.
+    const errorName = error instanceof Error ? error.name : "UnknownError";
+    console.error(`[home] sale load failed: ${errorName}`);
+    return { ok: false, now, upcomingEnd };
+  }
+});
+
 // The root default title (no template on the home page). The canonical URL
-// ignores ?retailer=, so every filtered view points at "/".
-export const metadata: Metadata = publicPageMetadata({ path: "/", description: SITE_DESCRIPTION });
+// ignores ?retailer=, so every filtered view points at "/". When the main
+// read failed, the page shows an error (HTTP 200) and is kept out of the
+// index; links on it may still be followed.
+export async function generateMetadata({ searchParams }: PageProps<"/">): Promise<Metadata> {
+  // Before any read, so `next build` never reads Supabase.
+  await connection();
+  const { retailer } = await searchParams;
+  const data = await loadHomeData(normalizeRetailerParam(retailer));
+
+  const metadata = publicPageMetadata({ path: "/", description: SITE_DESCRIPTION });
+  return data.ok ? metadata : { ...metadata, robots: { index: false } };
+}
 
 function toListItem(sale: SaleEventDto, now: Date): SaleListItem {
   return {
@@ -38,38 +94,17 @@ export default async function Home({ searchParams }: PageProps<"/">) {
   // Must stay outside try/catch: it interrupts prerendering at build time
   // so Supabase is never read during `next build`.
   await connection();
-  const now = new Date();
 
-  const { retailer: requestedRetailer } = await searchParams;
-
-  let retailers: RetailerDto[] | null = null;
-  let selectedRetailerSlug: string | undefined;
-  // One boundary for both the upcoming window and the next-sale hint, so a
-  // sale is in exactly one of them.
-  const upcomingEnd = addDays(now, UPCOMING_DAYS);
-
-  let sales: SaleEventDto[] | null = null;
-  try {
-    retailers = await listActiveRetailers();
-    // Only a known active retailer is used as a filter; anything else means "all".
-    selectedRetailerSlug = retailers.find(
-      (retailer) => retailer.slug === requestedRetailer,
-    )?.slug;
-    sales = await listPublishedSaleEvents({
-      from: now,
-      to: upcomingEnd,
-      retailerSlug: selectedRetailerSlug,
-    });
-  } catch (error) {
-    // Log only the error class; messages may contain upstream details.
-    const errorName = error instanceof Error ? error.name : "UnknownError";
-    console.error(`[home] sale load failed: ${errorName}`);
-    sales = null;
-  }
+  const { retailer } = await searchParams;
+  const data = await loadHomeData(normalizeRetailerParam(retailer));
+  const { now, upcomingEnd } = data;
+  const retailers = data.ok ? data.retailers : null;
+  const selectedRetailerSlug = data.ok ? data.selectedRetailerSlug : undefined;
 
   // Only when nothing starts within the window: the first published sale
-  // after it, as a hint. A failure here hides the hint, not the page.
-  const classified = sales === null ? null : classifySales(sales, now);
+  // after it, as a hint. A failure here hides the hint, not the page (which
+  // also stays indexable).
+  const classified = data.ok ? classifySales(data.sales, now) : null;
   let nextSale: SaleEventDto | null = null;
   if (classified !== null && classified.upcoming.length === 0) {
     try {
