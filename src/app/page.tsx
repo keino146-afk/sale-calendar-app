@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { AdminHomeLink } from "@/components/AdminHomeLink";
@@ -10,12 +11,17 @@ import {
   type SaleEventDto,
 } from "@/server/data/sale-events";
 import { addDays } from "@/lib/jst";
+import { publicPageMetadata, SITE_DESCRIPTION } from "@/lib/site";
 import {
   classifySales,
   formatPublicSalePeriod,
   isSaleActive,
   UPCOMING_DAYS,
 } from "@/lib/sale-display";
+
+// The root default title (no template on the home page). The canonical URL
+// ignores ?retailer=, so every filtered view points at "/".
+export const metadata: Metadata = publicPageMetadata({ path: "/", description: SITE_DESCRIPTION });
 
 function toListItem(sale: SaleEventDto, now: Date): SaleListItem {
   return {

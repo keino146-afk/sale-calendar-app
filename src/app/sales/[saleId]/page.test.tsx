@@ -17,7 +17,7 @@ vi.mock("next/server", () => ({ connection }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/server/data/sale-events", () => ({ getPublishedSaleEvent }));
 
-const { default: SaleDetailPage } = await import("./page");
+const { default: SaleDetailPage, generateMetadata } = await import("./page");
 
 // Fake values only; none of these are real credentials or hosts.
 const SALE_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -210,5 +210,64 @@ describe("SaleDetailPage timing state", () => {
       const html = await renderAt(now);
       expect(html).not.toMatch(/published|公開中/);
     }
+  });
+});
+
+describe("SaleDetailPage metadata", () => {
+  it("titles the page {title}（{retailer}） with the public period and a canonical URL", async () => {
+    getPublishedSaleEvent.mockResolvedValue(SALE);
+
+    const metadata = await generateMetadata(props());
+
+    expect(connection).toHaveBeenCalled();
+    expect(getPublishedSaleEvent).toHaveBeenCalledWith(SALE_ID);
+    expect(metadata.title).toBe("スーパーSALE（楽天市場）");
+    // The public period (last running minute), not the stored exclusive end.
+    expect(metadata.description).toBe(
+      "楽天市場「スーパーSALE」の開催期間は11/4 20:00 〜 11/11 01:59です。開催情報と公式ページへのリンクを確認できます。",
+    );
+    expect(metadata.alternates).toEqual({ canonical: `/sales/${SALE_ID}` });
+    expect(metadata.openGraph).toMatchObject({
+      url: `/sales/${SALE_ID}`,
+      title: "スーパーSALE（楽天市場） | セールカレンダー",
+      description: metadata.description,
+      type: "website",
+    });
+    expect(metadata.twitter).toMatchObject({ card: "summary", title: "スーパーSALE（楽天市場） | セールカレンダー" });
+    expect(metadata).not.toHaveProperty("robots");
+  });
+
+  it("never puts the current timing state in the description", async () => {
+    getPublishedSaleEvent.mockResolvedValue(SALE);
+    for (const now of ["2026-11-01T00:00:00Z", "2026-11-05T00:00:00Z", "2026-12-01T00:00:00Z"]) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(now));
+      try {
+        const { description } = await generateMetadata(props());
+        expect(description).not.toMatch(/開催予定|開催中|終了しました/);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  });
+
+  it("passes markup-like titles through unchanged for Next.js to escape", async () => {
+    getPublishedSaleEvent.mockResolvedValue({ ...SALE, title: `<script>alert("x")</script> & 'A' <b>` });
+
+    const metadata = await generateMetadata(props());
+
+    expect(metadata.title).toBe(`<script>alert("x")</script> & 'A' <b>（楽天市場）`);
+  });
+
+  it("adds nothing for a missing sale, leaving the page's 404 (with noindex) in charge", async () => {
+    getPublishedSaleEvent.mockResolvedValue(null);
+
+    expect(await generateMetadata(props("not-a-uuid"))).toEqual({});
+  });
+
+  it("keeps a load failure page out of the index without leaking details", async () => {
+    getPublishedSaleEvent.mockRejectedValue(new Error("sb_secret_FAKE_SHOULD_NOT_APPEAR"));
+
+    expect(await generateMetadata(props())).toEqual({ robots: { index: false } });
   });
 });

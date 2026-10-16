@@ -78,6 +78,10 @@ describe("admin layout", () => {
   it("keeps the admin area out of search engines", () => {
     expect(metadata.robots).toEqual({ index: false, follow: false });
   });
+
+  it("uses an absolute title so the root template does not add the site name twice", () => {
+    expect(metadata.title).toEqual({ absolute: "管理画面 | セールカレンダー" });
+  });
 });
 
 describe("AdminLoginPage", () => {

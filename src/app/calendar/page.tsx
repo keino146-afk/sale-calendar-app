@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -20,6 +21,14 @@ import {
   type YearMonth,
 } from "@/lib/calendar-grid";
 import { formatPublicSalePeriod, isSaleActive, type SaleTiming } from "@/lib/sale-display";
+import { publicPageMetadata } from "@/lib/site";
+
+// One canonical URL for every month and day view (?year=&month=&day=).
+export const metadata: Metadata = publicPageMetadata({
+  path: "/calendar",
+  title: "カレンダー",
+  description: "楽天市場・Amazon・Qoo10の大型セールの予定を月ごとのカレンダーで確認できます。",
+});
 
 export default async function CalendarPage({ searchParams }: PageProps<"/calendar">) {
   // Must stay outside try/catch: it interrupts prerendering at build time

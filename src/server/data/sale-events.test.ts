@@ -4,9 +4,13 @@ import { createFakeSupabase, type FakeResult } from "@/test/fake-postgrest";
 const { getPublicSupabaseClient } = vi.hoisted(() => ({ getPublicSupabaseClient: vi.fn() }));
 vi.mock("@/server/supabase/public-client", () => ({ getPublicSupabaseClient }));
 
-const { listPublishedSaleEvents, getNextPublishedSaleEvent, getPublishedSaleEvent } = await import(
-  "./sale-events"
-);
+const {
+  listPublishedSaleEvents,
+  getNextPublishedSaleEvent,
+  getPublishedSaleEvent,
+  listSitemapSaleEvents,
+  SITEMAP_SALE_LIMIT,
+} = await import("./sale-events");
 const { DataAccessError, InvalidQueryError } = await import("./errors");
 
 const EXPECTED_COLUMNS =
@@ -278,5 +282,47 @@ describe("getPublishedSaleEvent", () => {
     useFake({ data: { ...ROW, published_at: null }, error: null });
 
     await expect(getPublishedSaleEvent(EVENT_ID)).rejects.toBeInstanceOf(DataAccessError);
+  });
+});
+
+describe("listSitemapSaleEvents", () => {
+  const NOW = new Date("2026-10-16T03:00:00.000Z");
+
+  it("asks only for published sales that have not ended, in a fixed order, with a limit", async () => {
+    const fake = useFake({
+      data: [{ id: EVENT_ID, updated_at: "2026-11-20T00:00:00.123456+00:00" }],
+      error: null,
+    });
+
+    expect(await listSitemapSaleEvents({ now: NOW })).toEqual([
+      { id: EVENT_ID, updatedAt: "2026-11-20T00:00:00.123456+00:00" },
+    ]);
+    expect(fake.tables).toEqual(["sale_events"]);
+    expect(fake.calls).toEqual([
+      { method: "select", args: ["id, updated_at"] },
+      { method: "eq", args: ["status", "published"] },
+      { method: "gt", args: ["ends_at", NOW.toISOString()] },
+      { method: "order", args: ["starts_at", { ascending: true }] },
+      { method: "order", args: ["id", { ascending: true }] },
+      { method: "limit", args: [1000] },
+      { method: "overrideTypes", args: [] },
+    ]);
+    expect(SITEMAP_SALE_LIMIT).toBe(1000);
+  });
+
+  it("rejects an invalid date without querying", async () => {
+    const fake = useFake({ data: [], error: null });
+
+    await expect(listSitemapSaleEvents({ now: new Date("invalid") })).rejects.toBeInstanceOf(InvalidQueryError);
+    expect(fake.tables).toEqual([]);
+  });
+
+  it("converts Supabase errors to a generic DataAccessError", async () => {
+    useFake({ data: null, error: { code: "42501", message: "permission denied for table sale_events" } });
+
+    const promise = listSitemapSaleEvents({ now: NOW });
+
+    await expect(promise).rejects.toBeInstanceOf(DataAccessError);
+    await expect(promise).rejects.not.toThrow(/permission denied|42501/);
   });
 });
