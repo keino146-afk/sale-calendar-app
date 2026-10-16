@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
+import { cache } from "react";
 import { MonthGrid, type MonthGridEvent } from "@/components/MonthGrid";
 import { RetailerFilter } from "@/components/RetailerFilter";
 import { SaleList, type SaleListItem } from "@/components/SaleList";
@@ -23,39 +24,81 @@ import {
 import { formatPublicSalePeriod, isSaleActive, type SaleTiming } from "@/lib/sale-display";
 import { publicPageMetadata } from "@/lib/site";
 
-// One canonical URL for every month and day view (?year=&month=&day=).
-export const metadata: Metadata = publicPageMetadata({
-  path: "/calendar",
-  title: "カレンダー",
-  description: "楽天市場・Amazon・Qoo10の大型セールの予定を月ごとのカレンダーで確認できます。",
-});
+type CalendarData =
+  | {
+      ok: true;
+      now: Date;
+      yearMonth: YearMonth;
+      retailers: RetailerDto[];
+      selectedRetailerSlug: string | undefined;
+      sales: SaleEventDto[];
+    }
+  | { ok: false; now: Date; yearMonth: YearMonth };
+
+// Repeated parameters arrive as arrays; like every non-string value they
+// never matched before (a month falls back to the current one, a retailer to
+// "all"). Only primitives reach the cached loader, so the page and
+// generateMetadata share one cache entry.
+function stringParam(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+// The page's read (retailers, then the month's sales), once per request:
+// React cache() shares the result between generateMetadata and the page and
+// keeps nothing across requests. ?day= only selects within the month, so it
+// is not part of the key. Failures are returned, not thrown.
+const loadCalendarData = cache(
+  async (
+    yearParam: string | undefined,
+    monthParam: string | undefined,
+    requestedRetailer: string | undefined,
+  ): Promise<CalendarData> => {
+    const now = new Date();
+    const yearMonth = resolveYearMonth(yearParam, monthParam, now);
+    try {
+      const retailers = await listActiveRetailers();
+      // Only a known active retailer is used as a filter; anything else means "all".
+      const selectedRetailerSlug = retailers.find((retailer) => retailer.slug === requestedRetailer)?.slug;
+      const { from, to } = calendarRange(yearMonth);
+      const sales = await listPublishedSaleEvents({ from, to, retailerSlug: selectedRetailerSlug });
+      return { ok: true, now, yearMonth, retailers, selectedRetailerSlug, sales };
+    } catch (error) {
+      // Log only the error class; messages may contain upstream details.
+      const errorName = error instanceof Error ? error.name : "UnknownError";
+      console.error(`[calendar] sale load failed: ${errorName}`);
+      return { ok: false, now, yearMonth };
+    }
+  },
+);
+
+// One canonical URL for every month and day view (?year=&month=&day=). When
+// the read failed, the page shows an error (HTTP 200) and is kept out of the
+// index; links on it may still be followed.
+export async function generateMetadata({ searchParams }: PageProps<"/calendar">): Promise<Metadata> {
+  // Before any read, so `next build` never reads Supabase.
+  await connection();
+  const { year, month, retailer } = await searchParams;
+  const data = await loadCalendarData(stringParam(year), stringParam(month), stringParam(retailer));
+
+  const metadata = publicPageMetadata({
+    path: "/calendar",
+    title: "カレンダー",
+    description: "楽天市場・Amazon・Qoo10の大型セールの予定を月ごとのカレンダーで確認できます。",
+  });
+  return data.ok ? metadata : { ...metadata, robots: { index: false } };
+}
 
 export default async function CalendarPage({ searchParams }: PageProps<"/calendar">) {
   // Must stay outside try/catch: it interrupts prerendering at build time
   // so Supabase is never read during `next build`.
   await connection();
-  const now = new Date();
 
-  const { year, month, day, retailer: requestedRetailer } = await searchParams;
-  const yearMonth = resolveYearMonth(year, month, now);
-
-  let retailers: RetailerDto[] | null = null;
-  let selectedRetailerSlug: string | undefined;
-  let sales: SaleEventDto[] | null = null;
-  try {
-    retailers = await listActiveRetailers();
-    // Only a known active retailer is used as a filter; anything else means "all".
-    selectedRetailerSlug = retailers.find(
-      (retailer) => retailer.slug === requestedRetailer,
-    )?.slug;
-    const { from, to } = calendarRange(yearMonth);
-    sales = await listPublishedSaleEvents({ from, to, retailerSlug: selectedRetailerSlug });
-  } catch (error) {
-    // Log only the error class; messages may contain upstream details.
-    const errorName = error instanceof Error ? error.name : "UnknownError";
-    console.error(`[calendar] sale load failed: ${errorName}`);
-    sales = null;
-  }
+  const { year, month, day, retailer } = await searchParams;
+  const data = await loadCalendarData(stringParam(year), stringParam(month), stringParam(retailer));
+  const { now, yearMonth } = data;
+  const retailers = data.ok ? data.retailers : null;
+  const selectedRetailerSlug = data.ok ? data.selectedRetailerSlug : undefined;
+  const sales = data.ok ? data.sales : null;
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3 px-4 pb-12 pt-3">

@@ -14,7 +14,7 @@ vi.mock("next/server", () => ({ connection }));
 vi.mock("@/server/data/retailers", () => ({ listActiveRetailers }));
 vi.mock("@/server/data/sale-events", () => ({ listPublishedSaleEvents, getNextPublishedSaleEvent }));
 
-const { default: Home, metadata: homeMetadata } = await import("./page");
+const { default: Home, generateMetadata } = await import("./page");
 
 // Fake values only; none of these are real credentials or hosts.
 const RETAILERS = [
@@ -344,12 +344,98 @@ describe("Home next-sale hint", () => {
 });
 
 describe("Home metadata", () => {
-  it("uses the root default title and one canonical URL whatever the retailer filter", () => {
-    // Static metadata: ?retailer= cannot change it.
-    expect(homeMetadata).not.toHaveProperty("title");
-    expect(homeMetadata.alternates).toEqual({ canonical: "/" });
-    expect(homeMetadata.openGraph).toMatchObject({ url: "/", title: "セールカレンダー", type: "website" });
-    expect(homeMetadata.twitter).toMatchObject({ card: "summary", title: "セールカレンダー" });
-    expect(homeMetadata.description).toContain("楽天市場・Amazon・Qoo10");
+  async function homeMetadata(params: Record<string, string | string[] | undefined> = {}) {
+    return generateMetadata(homeProps(params));
+  }
+
+  const EXPECTED = {
+    description: "楽天市場・Amazon・Qoo10の大型セールの開催予定と開催中のセールをまとめて確認できるセールカレンダーです。",
+    alternates: { canonical: "/" },
+    openGraph: {
+      type: "website",
+      siteName: "セールカレンダー",
+      locale: "ja_JP",
+      url: "/",
+      title: "セールカレンダー",
+      description: "楽天市場・Amazon・Qoo10の大型セールの開催予定と開催中のセールをまとめて確認できるセールカレンダーです。",
+    },
+    twitter: {
+      card: "summary",
+      title: "セールカレンダー",
+      description: "楽天市場・Amazon・Qoo10の大型セールの開催予定と開催中のセールをまとめて確認できるセールカレンダーです。",
+    },
+  };
+
+  it("keeps the Phase 6H metadata (root default title, canonical /) and stays indexable when data loads", async () => {
+    listPublishedSaleEvents.mockResolvedValue([ACTIVE_SALE, UPCOMING_SALE]);
+
+    expect(await homeMetadata()).toEqual(EXPECTED);
+  });
+
+  it("stays indexable with zero sales", async () => {
+    const metadata = await homeMetadata();
+
+    expect(metadata).toEqual(EXPECTED);
+    expect(metadata).not.toHaveProperty("robots");
+  });
+
+  it.each([
+    ["a valid retailer", { retailer: "amazon" }],
+    ["an unknown retailer", { retailer: "qoo10" }],
+    ["a repeated retailer", { retailer: ["rakuten", "amazon"] }],
+  ])("keeps canonical / with %s", async (_label, params) => {
+    expect(await homeMetadata(params)).toEqual(EXPECTED);
+  });
+
+  it("does not read the next-sale hint, and a failing hint keeps the page indexable", async () => {
+    listPublishedSaleEvents.mockResolvedValue([ACTIVE_SALE]);
+    getNextPublishedSaleEvent.mockRejectedValue(new Error("hint down"));
+
+    expect(await homeMetadata()).toEqual(EXPECTED);
+    expect(getNextPublishedSaleEvent).not.toHaveBeenCalled();
+
+    const html = await renderHome();
+    expect(html).toContain("開催中セール");
+    expect(html).not.toContain("セール情報を読み込めませんでした");
+  });
+
+  it.each([
+    ["the retailer read", () => listActiveRetailers.mockRejectedValue(new Error("sb_secret_FAKE retailers"))],
+    ["the sale read", () => listPublishedSaleEvents.mockRejectedValue(new Error("sb_secret_FAKE sales"))],
+  ])("adds noindex (without nofollow) when %s fails, keeping canonical and OG", async (_label, fail) => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fail();
+
+    const metadata = await homeMetadata();
+
+    expect(metadata).toEqual({ ...EXPECTED, robots: { index: false } });
+    expect(metadata.robots).not.toHaveProperty("follow");
+    const logged = errorSpy.mock.calls.flat().map(String).join(" ");
+    expect(logged).toContain("[home] sale load failed: Error");
+    expect(logged).not.toContain("sb_secret_");
+  });
+
+  it("waits for a request before reading, then reads with the normalized filter", async () => {
+    const order: string[] = [];
+    connection.mockImplementation(async () => {
+      order.push("connection");
+    });
+    listActiveRetailers.mockImplementation(async () => {
+      order.push("retailers");
+      return RETAILERS;
+    });
+
+    await homeMetadata({ retailer: "amazon" });
+
+    expect(order).toEqual(["connection", "retailers"]);
+    expect(listPublishedSaleEvents).toHaveBeenCalledWith(expect.objectContaining({ retailerSlug: "amazon" }));
+  });
+
+  it("does not swallow connection() failures", async () => {
+    const interrupt = new Error("prerender interrupted");
+    connection.mockRejectedValue(interrupt);
+
+    await expect(homeMetadata()).rejects.toBe(interrupt);
+    expect(listActiveRetailers).not.toHaveBeenCalled();
   });
 });
