@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { getPublicSupabaseClient } from "@/server/supabase/public-client";
 import { DataAccessError, InvalidQueryError, logSupabaseError } from "./errors";
 
@@ -159,7 +160,11 @@ export async function getNextPublishedSaleEvent({
   return data.length === 0 ? null : toDto(data[0], "getNextPublishedSaleEvent");
 }
 
-export async function getPublishedSaleEvent(id: string): Promise<SaleEventDto | null> {
+// Wrapped in React cache(): within one request, the detail page and its
+// generateMetadata share a single query. Nothing is kept across requests.
+export const getPublishedSaleEvent = cache(async function getPublishedSaleEvent(
+  id: string,
+): Promise<SaleEventDto | null> {
   if (!UUID_PATTERN.test(id)) {
     return null;
   }
@@ -178,4 +183,38 @@ export async function getPublishedSaleEvent(id: string): Promise<SaleEventDto | 
   }
 
   return data === null ? null : toDto(data, "getPublishedSaleEvent");
+});
+
+export type SitemapSaleEntry = {
+  id: string;
+  updatedAt: string;
+};
+
+// Upper bound for sitemap sale entries; far above the current number of
+// sales. Approaching it means the sitemap needs pagination.
+export const SITEMAP_SALE_LIMIT = 1000;
+
+// Published sales that have not ended at `now` (upcoming and active), for the
+// sitemap. Ended sales stay viewable but are not listed.
+export async function listSitemapSaleEvents({ now }: { now: Date }): Promise<SitemapSaleEntry[]> {
+  if (!isValidDate(now)) {
+    throw new InvalidQueryError("Invalid date");
+  }
+
+  const { data, error } = await getPublicSupabaseClient()
+    .from("sale_events")
+    .select("id, updated_at")
+    .eq("status", "published")
+    .gt("ends_at", now.toISOString())
+    .order("starts_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(SITEMAP_SALE_LIMIT)
+    .overrideTypes<{ id: string; updated_at: string }[], { merge: false }>();
+
+  if (error) {
+    logSupabaseError("listSitemapSaleEvents", error);
+    throw new DataAccessError("Failed to load sale events");
+  }
+
+  return data.map((row) => ({ id: row.id, updatedAt: row.updated_at }));
 }

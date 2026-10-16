@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
@@ -9,6 +10,7 @@ import {
   SALE_TIMING_LABELS,
   type SaleTimingState,
 } from "@/lib/sale-display";
+import { publicPageMetadata } from "@/lib/site";
 
 // Active uses the same red as the 開催中 badge in sale lists.
 const TIMING_TONES: Record<SaleTimingState, string> = {
@@ -18,6 +20,31 @@ const TIMING_TONES: Record<SaleTimingState, string> = {
 };
 
 type LoadResult = { ok: true; sale: SaleEventDto | null } | { ok: false };
+
+// Title "{title}（{retailer}）" (the root template adds the site name) and a
+// description with the public period only: no 開催中/終了 wording, which
+// would go stale in search results. Shares the page's query via cache().
+// Not found: nothing special here; the page calls notFound(), which returns
+// 404 with noindex. A load failure renders a 200 error page, so it is kept
+// out of the index.
+export async function generateMetadata({ params }: PageProps<"/sales/[saleId]">): Promise<Metadata> {
+  await connection();
+  const { saleId } = await params;
+
+  let sale: SaleEventDto | null;
+  try {
+    sale = await getPublishedSaleEvent(saleId);
+  } catch {
+    return { robots: { index: false } };
+  }
+  if (sale === null) return {};
+
+  return publicPageMetadata({
+    path: `/sales/${sale.id}`,
+    title: `${sale.title}（${sale.retailer.name}）`,
+    description: `${sale.retailer.name}「${sale.title}」の開催期間は${formatPublicSalePeriod(sale)}です。開催情報と公式ページへのリンクを確認できます。`,
+  });
+}
 
 export default async function SaleDetailPage({ params }: PageProps<"/sales/[saleId]">) {
   // connection() and notFound() must stay outside try/catch: both work by

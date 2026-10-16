@@ -11,7 +11,7 @@ vi.mock("next/server", () => ({ connection }));
 vi.mock("@/server/data/retailers", () => ({ listActiveRetailers }));
 vi.mock("@/server/data/sale-events", () => ({ listPublishedSaleEvents }));
 
-const { default: CalendarPage } = await import("./page");
+const { default: CalendarPage, metadata: calendarMetadata } = await import("./page");
 
 // Fake values only; none of these are real credentials or hosts.
 const RETAILERS = [
@@ -459,5 +459,16 @@ describe("CalendarPage", () => {
     expect(html).toContain("セール情報を読み込めませんでした");
     expect(html).not.toContain("upstream detail");
     expect(listPublishedSaleEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("Calendar metadata", () => {
+  it("is titled カレンダー with one canonical URL for every month and day view", () => {
+    // Static metadata: ?year=&month=&day= cannot change it.
+    expect(calendarMetadata.title).toBe("カレンダー");
+    expect(calendarMetadata.description).toContain("カレンダー");
+    expect(calendarMetadata.alternates).toEqual({ canonical: "/calendar" });
+    expect(calendarMetadata.openGraph).toMatchObject({ url: "/calendar", title: "カレンダー | セールカレンダー" });
+    expect(calendarMetadata.twitter).toMatchObject({ card: "summary", title: "カレンダー | セールカレンダー" });
   });
 });

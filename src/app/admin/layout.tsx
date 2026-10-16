@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 
 // The admin area must never be indexed.
 export const metadata: Metadata = {
-  title: "管理画面 | セールカレンダー",
+  // absolute: the root title template must not add the site name twice.
+  title: { absolute: "管理画面 | セールカレンダー" },
   robots: { index: false, follow: false },
 };
 
