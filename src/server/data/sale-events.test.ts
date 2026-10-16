@@ -4,7 +4,9 @@ import { createFakeSupabase, type FakeResult } from "@/test/fake-postgrest";
 const { getPublicSupabaseClient } = vi.hoisted(() => ({ getPublicSupabaseClient: vi.fn() }));
 vi.mock("@/server/supabase/public-client", () => ({ getPublicSupabaseClient }));
 
-const { listPublishedSaleEvents, getPublishedSaleEvent } = await import("./sale-events");
+const { listPublishedSaleEvents, getNextPublishedSaleEvent, getPublishedSaleEvent } = await import(
+  "./sale-events"
+);
 const { DataAccessError, InvalidQueryError } = await import("./errors");
 
 const EXPECTED_COLUMNS =
@@ -164,6 +166,69 @@ describe("listPublishedSaleEvents", () => {
     await expect(listPublishedSaleEvents({ from: FROM, to: TO })).rejects.toBeInstanceOf(
       DataAccessError,
     );
+  });
+});
+
+describe("getNextPublishedSaleEvent", () => {
+  const AFTER = new Date("2026-10-24T03:00:00.000Z");
+
+  it("asks for the earliest published event starting at or after the boundary", async () => {
+    const fake = useFake({ data: [ROW], error: null });
+
+    const result = await getNextPublishedSaleEvent({ after: AFTER });
+
+    expect(result).toEqual(DTO);
+    expect(fake.tables).toEqual(["sale_events"]);
+    expect(fake.calls).toEqual([
+      { method: "select", args: [EXPECTED_COLUMNS] },
+      { method: "eq", args: ["status", "published"] },
+      { method: "gte", args: ["starts_at", AFTER.toISOString()] },
+      { method: "order", args: ["starts_at", { ascending: true }] },
+      { method: "order", args: ["id", { ascending: true }] },
+      { method: "limit", args: [1] },
+      { method: "overrideTypes", args: [] },
+    ]);
+  });
+
+  it("filters by retailer slug when given", async () => {
+    const fake = useFake({ data: [], error: null });
+
+    await getNextPublishedSaleEvent({ after: AFTER, retailerSlug: "qoo10" });
+
+    expect(fake.calls).toContainEqual({ method: "eq", args: ["retailers.slug", "qoo10"] });
+    expect(methods(fake.calls).slice(0, 4)).toEqual(["select", "eq", "gte", "eq"]);
+  });
+
+  it("returns null when there is no later event", async () => {
+    useFake({ data: [], error: null });
+
+    await expect(getNextPublishedSaleEvent({ after: AFTER })).resolves.toBeNull();
+  });
+
+  it.each([
+    ["an invalid date", { after: new Date("invalid") }],
+    ["a non-date", { after: "2026-10-24" as unknown as Date }],
+    ["a malformed retailer slug", { after: AFTER, retailerSlug: "Rakuten!" }],
+  ])("rejects %s without querying", async (_label, params) => {
+    const fake = useFake({ data: [], error: null });
+
+    await expect(getNextPublishedSaleEvent(params)).rejects.toBeInstanceOf(InvalidQueryError);
+    expect(fake.tables).toEqual([]);
+  });
+
+  it("converts Supabase errors to a generic DataAccessError", async () => {
+    useFake({ data: null, error: { code: "42501", message: "permission denied for table sale_events" } });
+
+    const promise = getNextPublishedSaleEvent({ after: AFTER });
+
+    await expect(promise).rejects.toBeInstanceOf(DataAccessError);
+    await expect(promise).rejects.not.toThrow(/permission denied|42501/);
+  });
+
+  it("fails safely when published_at is unexpectedly null", async () => {
+    useFake({ data: [{ ...ROW, published_at: null }], error: null });
+
+    await expect(getNextPublishedSaleEvent({ after: AFTER })).rejects.toBeInstanceOf(DataAccessError);
   });
 });
 

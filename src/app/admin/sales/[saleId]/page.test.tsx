@@ -322,3 +322,63 @@ describe("AdminSaleDetailPage", () => {
     expect(html).toContain("操作を完了できませんでした");
   });
 });
+
+describe("AdminSaleDetailPage past-end warning", () => {
+  // SALE runs 2026-11-04T11:00Z to 2026-11-10T17:00Z (exclusive end).
+  const ENDED_AT = "2026-11-10T17:00:00Z";
+  const BEFORE_END = "2026-11-10T16:59:59.999Z";
+
+  async function renderAt(now: string, overrides: Record<string, unknown>) {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, ...overrides });
+    mocks.getLatestRejectReason.mockResolvedValue(null);
+    try {
+      return await render();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("flags a published sale whose stored end has passed, keeping 終了する", async () => {
+    const html = await renderAt(ENDED_AT, { status: "published" });
+
+    expect(html).toContain('data-past-end="true"');
+    expect(html).toContain("期間切れ");
+    expect(html).toContain('data-past-end-notice="published"');
+    expect(html).toContain("公開ページでは「終了しました」と表示されています");
+    expect(html).toContain("必要に応じて「終了する」を押してください");
+    expect(actionLabels(html)).toEqual(["終了する"]);
+    expect(html).toContain("編集する");
+  });
+
+  it("flags a pending sale whose stored end has passed, keeping 公開する and 却下する", async () => {
+    const html = await renderAt(ENDED_AT, { status: "pending_review", publishedAt: null });
+
+    expect(html).toContain("期間切れ");
+    expect(html).toContain('data-past-end-notice="pending_review"');
+    expect(html).toContain("このまま公開すると、公開ページでは「終了しました」と表示されます");
+    expect(html).toContain("期間を確認してください");
+    expect(actionLabels(html)).toEqual(["公開する", "却下する"]);
+  });
+
+  it.each([
+    ["published", { status: "published" }],
+    ["pending_review", { status: "pending_review", publishedAt: null }],
+  ])("does not flag a %s sale one millisecond before its end", async (_label, overrides) => {
+    const html = await renderAt(BEFORE_END, overrides);
+
+    expect(html).not.toContain("期間切れ");
+    expect(html).not.toContain("data-past-end-notice");
+  });
+
+  it.each([
+    ["rejected", { status: "rejected", publishedAt: null, rejectedAt: "2026-11-02T00:00:00Z" }],
+    ["archived", { status: "archived", archivedAt: "2026-11-11T00:00:00Z" }],
+  ])("does not flag a %s sale after its end", async (_label, overrides) => {
+    const html = await renderAt("2026-12-01T00:00:00Z", overrides);
+
+    expect(html).not.toContain("期間切れ");
+    expect(html).not.toContain("data-past-end-notice");
+  });
+});

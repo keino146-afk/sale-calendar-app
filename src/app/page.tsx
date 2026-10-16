@@ -4,7 +4,11 @@ import { AdminHomeLink } from "@/components/AdminHomeLink";
 import { RetailerFilter } from "@/components/RetailerFilter";
 import { SaleList, type SaleListItem } from "@/components/SaleList";
 import { listActiveRetailers, type RetailerDto } from "@/server/data/retailers";
-import { listPublishedSaleEvents, type SaleEventDto } from "@/server/data/sale-events";
+import {
+  getNextPublishedSaleEvent,
+  listPublishedSaleEvents,
+  type SaleEventDto,
+} from "@/server/data/sale-events";
 import { addDays } from "@/lib/jst";
 import {
   classifySales,
@@ -34,6 +38,10 @@ export default async function Home({ searchParams }: PageProps<"/">) {
 
   let retailers: RetailerDto[] | null = null;
   let selectedRetailerSlug: string | undefined;
+  // One boundary for both the upcoming window and the next-sale hint, so a
+  // sale is in exactly one of them.
+  const upcomingEnd = addDays(now, UPCOMING_DAYS);
+
   let sales: SaleEventDto[] | null = null;
   try {
     retailers = await listActiveRetailers();
@@ -43,7 +51,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
     )?.slug;
     sales = await listPublishedSaleEvents({
       from: now,
-      to: addDays(now, UPCOMING_DAYS),
+      to: upcomingEnd,
       retailerSlug: selectedRetailerSlug,
     });
   } catch (error) {
@@ -51,6 +59,23 @@ export default async function Home({ searchParams }: PageProps<"/">) {
     const errorName = error instanceof Error ? error.name : "UnknownError";
     console.error(`[home] sale load failed: ${errorName}`);
     sales = null;
+  }
+
+  // Only when nothing starts within the window: the first published sale
+  // after it, as a hint. A failure here hides the hint, not the page.
+  const classified = sales === null ? null : classifySales(sales, now);
+  let nextSale: SaleEventDto | null = null;
+  if (classified !== null && classified.upcoming.length === 0) {
+    try {
+      nextSale = await getNextPublishedSaleEvent({
+        after: upcomingEnd,
+        retailerSlug: selectedRetailerSlug,
+      });
+    } catch (error) {
+      const errorName = error instanceof Error ? error.name : "UnknownError";
+      console.error(`[home] next sale load failed: ${errorName}`);
+      nextSale = null;
+    }
   }
 
   return (
@@ -70,22 +95,31 @@ export default async function Home({ searchParams }: PageProps<"/">) {
         カレンダーを見る
         <span aria-hidden="true">›</span>
       </Link>
-      {retailers === null || sales === null ? (
+      {retailers === null || classified === null ? (
         <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm shadow-sm">
           セール情報を読み込めませんでした
         </p>
       ) : (
         <>
           <RetailerFilter retailers={retailers} selectedSlug={selectedRetailerSlug} />
-          <HomeSections sales={sales} now={now} />
+          <HomeSections {...classified} nextSale={nextSale} now={now} />
         </>
       )}
     </main>
   );
 }
 
-function HomeSections({ sales, now }: { sales: SaleEventDto[]; now: Date }) {
-  const { active, upcoming } = classifySales(sales, now);
+function HomeSections({
+  active,
+  upcoming,
+  nextSale,
+  now,
+}: {
+  active: SaleEventDto[];
+  upcoming: SaleEventDto[];
+  nextSale: SaleEventDto | null;
+  now: Date;
+}) {
   return (
     <>
       <section className="flex flex-col gap-2.5">
@@ -107,6 +141,12 @@ function HomeSections({ sales, now }: { sales: SaleEventDto[]; now: Date }) {
           items={upcoming.map((sale) => toListItem(sale, now))}
           emptyText="近日開催予定のセールはありません"
         />
+        {nextSale !== null ? (
+          <div className="flex flex-col gap-2 pt-1" data-next-sale>
+            <h3 className="px-1 text-sm font-semibold text-foreground/60">次回開催予定</h3>
+            <SaleList items={[toListItem(nextSale, now)]} emptyText="" />
+          </div>
+        ) : null}
       </section>
     </>
   );

@@ -1,3 +1,5 @@
+import { getSaleTimingState, type SaleTiming } from "./sale-display";
+
 // Sale event statuses shown in the admin area, in tab order.
 export const ADMIN_SALE_STATUSES = ["pending_review", "published", "rejected", "archived"] as const;
 
@@ -27,4 +29,18 @@ export const EDITABLE_SALE_STATUSES = ["pending_review", "published", "rejected"
 
 export function isEditableSaleStatus(status: AdminSaleStatus): boolean {
   return (EDITABLE_SALE_STATUSES as readonly AdminSaleStatus[]).includes(status);
+}
+
+// Statuses still waiting on an admin (to publish, or to archive) for which a
+// period that has already ended is worth flagging. Rejected and archived
+// sales are finished in the workflow and are not flagged.
+export const PAST_END_FLAGGED_STATUSES = ["pending_review", "published"] as const satisfies readonly AdminSaleStatus[];
+
+// True when the sale's stored (exclusive) end has passed while it is still
+// pending or published. Display only: nothing is changed because of it.
+export function isSalePastEnd(sale: SaleTiming & { status: AdminSaleStatus }, now: Date): boolean {
+  return (
+    (PAST_END_FLAGGED_STATUSES as readonly AdminSaleStatus[]).includes(sale.status) &&
+    getSaleTimingState(sale, now) === "ended"
+  );
 }
