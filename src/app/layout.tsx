@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,9 +13,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Site-wide defaults. metadataBase resolves every relative URL (canonical,
+// Open Graph) against the Production origin, also on Preview deployments.
+// No canonical or Open Graph URL here: each public page sets its own, and
+// pages that set none (admin, 404) must not inherit the home page's.
 export const metadata: Metadata = {
-  title: "セールカレンダー",
-  description: "楽天市場・Amazon・Qoo10のセール情報をまとめて確認できるセールカレンダー",
+  metadataBase: new URL(SITE_URL),
+  title: { default: SITE_NAME, template: `%s | ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  openGraph: { type: "website", siteName: SITE_NAME, locale: "ja_JP", title: SITE_NAME, description: SITE_DESCRIPTION },
+  twitter: { card: "summary", title: SITE_NAME, description: SITE_DESCRIPTION },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

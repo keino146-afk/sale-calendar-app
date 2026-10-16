@@ -14,7 +14,7 @@ vi.mock("next/server", () => ({ connection }));
 vi.mock("@/server/data/retailers", () => ({ listActiveRetailers }));
 vi.mock("@/server/data/sale-events", () => ({ listPublishedSaleEvents, getNextPublishedSaleEvent }));
 
-const { default: Home } = await import("./page");
+const { default: Home, metadata: homeMetadata } = await import("./page");
 
 // Fake values only; none of these are real credentials or hosts.
 const RETAILERS = [
@@ -340,5 +340,16 @@ describe("Home next-sale hint", () => {
     expect(html).toContain("近日開催予定のセールはありません");
     expect(html.split("境界セール")).toHaveLength(2);
     expect(html.indexOf("境界セール")).toBeGreaterThan(html.indexOf("次回開催予定"));
+  });
+});
+
+describe("Home metadata", () => {
+  it("uses the root default title and one canonical URL whatever the retailer filter", () => {
+    // Static metadata: ?retailer= cannot change it.
+    expect(homeMetadata).not.toHaveProperty("title");
+    expect(homeMetadata.alternates).toEqual({ canonical: "/" });
+    expect(homeMetadata.openGraph).toMatchObject({ url: "/", title: "セールカレンダー", type: "website" });
+    expect(homeMetadata.twitter).toMatchObject({ card: "summary", title: "セールカレンダー" });
+    expect(homeMetadata.description).toContain("楽天市場・Amazon・Qoo10");
   });
 });
