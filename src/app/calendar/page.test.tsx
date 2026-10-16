@@ -11,7 +11,7 @@ vi.mock("next/server", () => ({ connection }));
 vi.mock("@/server/data/retailers", () => ({ listActiveRetailers }));
 vi.mock("@/server/data/sale-events", () => ({ listPublishedSaleEvents }));
 
-const { default: CalendarPage, metadata: calendarMetadata } = await import("./page");
+const { default: CalendarPage, generateMetadata } = await import("./page");
 
 // Fake values only; none of these are real credentials or hosts.
 const RETAILERS = [
@@ -463,12 +463,85 @@ describe("CalendarPage", () => {
 });
 
 describe("Calendar metadata", () => {
-  it("is titled カレンダー with one canonical URL for every month and day view", () => {
-    // Static metadata: ?year=&month=&day= cannot change it.
-    expect(calendarMetadata.title).toBe("カレンダー");
-    expect(calendarMetadata.description).toContain("カレンダー");
-    expect(calendarMetadata.alternates).toEqual({ canonical: "/calendar" });
-    expect(calendarMetadata.openGraph).toMatchObject({ url: "/calendar", title: "カレンダー | セールカレンダー" });
-    expect(calendarMetadata.twitter).toMatchObject({ card: "summary", title: "カレンダー | セールカレンダー" });
+  async function calendarMetadata(params: Record<string, string | string[] | undefined> = {}) {
+    return generateMetadata({ params: Promise.resolve({}), searchParams: Promise.resolve(params) });
+  }
+
+  const DESCRIPTION = "楽天市場・Amazon・Qoo10の大型セールの予定を月ごとのカレンダーで確認できます。";
+  const EXPECTED = {
+    title: "カレンダー",
+    description: DESCRIPTION,
+    alternates: { canonical: "/calendar" },
+    openGraph: {
+      type: "website",
+      siteName: "セールカレンダー",
+      locale: "ja_JP",
+      url: "/calendar",
+      title: "カレンダー | セールカレンダー",
+      description: DESCRIPTION,
+    },
+    twitter: { card: "summary", title: "カレンダー | セールカレンダー", description: DESCRIPTION },
+  };
+
+  it("keeps the Phase 6H metadata and stays indexable when data loads, also with zero sales", async () => {
+    expect(await calendarMetadata()).toEqual(EXPECTED);
+  });
+
+  it.each([
+    ["year/month/day", { year: "2026", month: "11", day: "2026-11-03" }],
+    ["a retailer", { retailer: "amazon" }],
+    ["an invalid month and unknown retailer", { year: "2026", month: "13", retailer: "qoo10" }],
+    ["repeated parameters", { year: ["2026", "2027"], month: ["1", "2"], retailer: ["rakuten", "amazon"] }],
+  ])("keeps canonical /calendar with %s", async (_label, params) => {
+    expect(await calendarMetadata(params)).toEqual(EXPECTED);
+  });
+
+  it("reads the same month range and filter as the page, normalizing repeated parameters", async () => {
+    await calendarMetadata({ year: "2026", month: "11", retailer: "amazon" });
+    await calendarMetadata({ year: ["2026", "2027"], month: "11", retailer: ["amazon"] });
+
+    const [first, second] = listPublishedSaleEvents.mock.calls.map(([arg]) => arg);
+    expect(first).toMatchObject({ retailerSlug: "amazon" });
+    // Repeated year → current month (as before); repeated retailer → all.
+    expect(second).toMatchObject({ retailerSlug: undefined });
+  });
+
+  it.each([
+    ["the retailer read", () => listActiveRetailers.mockRejectedValue(new Error("sb_secret_FAKE retailers"))],
+    ["the sale read", () => listPublishedSaleEvents.mockRejectedValue(new Error("sb_secret_FAKE sales"))],
+  ])("adds noindex (without nofollow) when %s fails, keeping canonical and OG", async (_label, fail) => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fail();
+
+    const metadata = await calendarMetadata({ year: "2026", month: "11" });
+
+    expect(metadata).toEqual({ ...EXPECTED, robots: { index: false } });
+    expect(metadata.robots).not.toHaveProperty("follow");
+    const logged = errorSpy.mock.calls.flat().map(String).join(" ");
+    expect(logged).toContain("[calendar] sale load failed: Error");
+    expect(logged).not.toContain("sb_secret_");
+  });
+
+  it("waits for a request before reading", async () => {
+    const order: string[] = [];
+    connection.mockImplementation(async () => {
+      order.push("connection");
+    });
+    listActiveRetailers.mockImplementation(async () => {
+      order.push("retailers");
+      return RETAILERS;
+    });
+
+    await calendarMetadata();
+
+    expect(order).toEqual(["connection", "retailers"]);
+  });
+
+  it("does not swallow connection() failures", async () => {
+    const interrupt = new Error("prerender interrupted");
+    connection.mockRejectedValue(interrupt);
+
+    await expect(calendarMetadata()).rejects.toBe(interrupt);
+    expect(listActiveRetailers).not.toHaveBeenCalled();
   });
 });
