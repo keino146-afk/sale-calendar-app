@@ -71,6 +71,8 @@ export default async function AdminRejectSalePage({
         className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5"
       >
         <input type="hidden" name="saleId" value={sale.id} />
+        {/* The version this page shows; the RPC refuses the rejection if the sale changed since. */}
+        <input type="hidden" name="expectedUpdatedAt" value={sale.updatedAt} />
         <label className="flex flex-col gap-1 text-sm">
           却下理由
           <textarea

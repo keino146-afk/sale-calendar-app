@@ -51,6 +51,8 @@ const SALE = {
   publishedAt: null,
   rejectedAt: null,
   archivedAt: null,
+  // Microsecond precision, exactly as PostgREST returns it.
+  updatedAt: "2026-10-14T03:04:05.123456+00:00",
   retailer: { slug: "rakuten", name: "楽天市場" },
 };
 
@@ -89,6 +91,8 @@ describe("AdminRejectSalePage", () => {
     expect(html).toContain("却下理由");
     expect(html).toContain('<textarea name="reason" required="" maxLength="2000"');
     expect(html).toContain(`name="saleId" value="${SALE_ID}"`);
+    // The version this page shows, sent back unchanged with the rejection.
+    expect(html).toContain('name="expectedUpdatedAt" value="2026-10-14T03:04:05.123456+00:00"');
     expect(html).toContain("却下を確定する</button>");
     expect(html).toMatch(/<form [^>]*action="\/__action\/reject"/);
     expect(html).toMatch(/<button type="submit" aria-busy="false" class="[^"]*">却下を確定する<\/button>/);
