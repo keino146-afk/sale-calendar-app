@@ -62,6 +62,8 @@ const SALE = {
   publishedAt: "2026-11-01T01:00:00Z",
   rejectedAt: null,
   archivedAt: null,
+  // Microsecond precision, exactly as PostgREST returns it.
+  updatedAt: "2026-10-14T03:04:05.123456+00:00",
   retailer: { slug: "rakuten", name: "楽天市場" },
 };
 
@@ -280,7 +282,21 @@ describe("AdminSaleDetailPage", () => {
     expect(forms).toHaveLength(1);
     expect(forms[0]).toContain(`<form action="/__action/${action}">`);
     expect(forms[0]).toContain(`name="saleId" value="${SALE_ID}"`);
+    // The page version goes back unchanged (raw string, microseconds intact).
+    expect(forms[0]).toContain('name="expectedUpdatedAt" value="2026-10-14T03:04:05.123456+00:00"');
     expect(forms[0]).toMatch(new RegExp(`<button type="submit" aria-busy="false" class="[^"]*">${label}</button>`));
+  });
+
+  it("explains a stale transition and shows the reloaded sale", async () => {
+    mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, title: "最新のタイトル" });
+
+    const html = await render(SALE_ID, { error: "stale" });
+
+    expect(html).toContain(
+      "このセールは別の画面ですでに更新されています。最新の内容を確認してからもう一度操作してください",
+    );
+    expect(html).not.toContain("操作を完了できませんでした");
+    expect(html).toContain("最新のタイトル");
   });
 
   it("links reject to the confirmation page instead of posting directly", async () => {
@@ -344,6 +360,7 @@ describe("AdminSaleDetailPage", () => {
     expect(html).not.toContain("secret_detail");
     expect(html).not.toContain('role="status"');
     expect(html).toContain("操作を完了できませんでした");
+    expect(html).not.toContain("別の画面ですでに更新されています");
   });
 });
 

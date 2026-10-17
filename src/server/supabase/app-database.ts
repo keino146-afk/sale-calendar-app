@@ -46,14 +46,32 @@ export type UpdateSaleEventArgs = Omit<GeneratedUpdateSaleEvent["Args"], "p_desc
   p_description: string | null;
 };
 
+// The lifecycle RPCs have two overloads each (Phase 6O): the original ones
+// and the stale-checking ones with p_expected_updated_at. The application
+// calls only the stale-checking overloads, so their arguments replace the
+// generated (original) ones; the originals stay in the database for older
+// application deployments only.
+type ExpectedUpdatedAt = { p_expected_updated_at: string };
+type LifecycleFunctions = {
+  [Name in "publish_sale_event" | "archive_sale_event" | "reopen_sale_event" | "reject_sale_event"]: Omit<
+    GeneratedPublic["Functions"][Name],
+    "Args"
+  > & { Args: GeneratedPublic["Functions"][Name]["Args"] & ExpectedUpdatedAt };
+};
+type LifecycleFunctionName = keyof LifecycleFunctions;
+
 export type AppDatabase = Omit<GeneratedDatabase, "public"> & {
   public: Omit<GeneratedPublic, "Tables" | "Functions"> & {
     Tables: Omit<GeneratedPublic["Tables"], "sale_events"> & {
       sale_events: Omit<GeneratedSaleEvents, "Insert"> & { Insert: SaleEventAppInsert };
     };
-    Functions: Omit<GeneratedPublic["Functions"], "import_collection_candidate" | "update_sale_event"> & {
-      import_collection_candidate: Omit<GeneratedImportCandidate, "Args"> & { Args: ImportCollectionCandidateArgs };
-      update_sale_event: Omit<GeneratedUpdateSaleEvent, "Args"> & { Args: UpdateSaleEventArgs };
-    };
+    Functions: Omit<
+      GeneratedPublic["Functions"],
+      "import_collection_candidate" | "update_sale_event" | LifecycleFunctionName
+    > &
+      LifecycleFunctions & {
+        import_collection_candidate: Omit<GeneratedImportCandidate, "Args"> & { Args: ImportCollectionCandidateArgs };
+        update_sale_event: Omit<GeneratedUpdateSaleEvent, "Args"> & { Args: UpdateSaleEventArgs };
+      };
   };
 };

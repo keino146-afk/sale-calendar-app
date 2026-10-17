@@ -223,6 +223,22 @@ describe("admin security boundary", () => {
     expect(importer).not.toMatch(/\.(from|insert|update|upsert|delete)\(/);
   });
 
+  it("calls the lifecycle RPCs only through their stale-checking overloads", async () => {
+    // Phase 6O: every lifecycle call sends the page version, so the database
+    // refuses a transition on content the admin has not seen. The original
+    // overloads remain for older deployments only and are never called here.
+    const code = await readFile("src/server/data/admin-sale-actions.ts", "utf8");
+    const calls = [...code.matchAll(/\.rpc\(\s*"(\w+)",\s*\{([^}]*)\}/g)];
+    expect(calls.map(([, name]) => name).sort()).toEqual([
+      "archive_sale_event",
+      "publish_sale_event",
+      "reject_sale_event",
+      "reopen_sale_event",
+    ]);
+    for (const [, , args] of calls) expect(args).toContain("p_expected_updated_at: expectedUpdatedAt");
+    expect(code.match(/\.rpc\(/g)).toHaveLength(4);
+  });
+
   it("edits sale content only through the update RPC, from one data module", async () => {
     // The only content change path is public.update_sale_event, called from
     // one data module that makes no other write (the .update( ban above stays).

@@ -24,13 +24,16 @@ export type AdminSaleEventDto = {
   publishedAt: string | null;
   rejectedAt: string | null;
   archivedAt: string | null;
+  // Raw PostgREST timestamp (microseconds intact): sent back unchanged as
+  // the lifecycle RPCs' p_expected_updated_at, never parsed into a Date.
+  updatedAt: string;
   retailer: { slug: string; name: string };
 };
 
 export const ADMIN_LIST_LIMIT = 100;
 
 const ADMIN_SALE_EVENT_COLUMNS =
-  "id, title, description, starts_at, ends_at, is_date_only, status, source_url, source_checked_at, published_at, rejected_at, archived_at, retailers!inner(slug, name)";
+  "id, title, description, starts_at, ends_at, is_date_only, status, source_url, source_checked_at, published_at, rejected_at, archived_at, updated_at, retailers!inner(slug, name)";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -59,6 +62,7 @@ type AdminSaleEventRow = {
   published_at: string | null;
   rejected_at: string | null;
   archived_at: string | null;
+  updated_at: string;
   retailers: { slug: string; name: string } | null;
 };
 
@@ -83,6 +87,7 @@ function toDto(row: AdminSaleEventRow, context: string): AdminSaleEventDto {
     publishedAt: row.published_at,
     rejectedAt: row.rejected_at,
     archivedAt: row.archived_at,
+    updatedAt: row.updated_at,
     retailer: { slug: row.retailers.slug, name: row.retailers.name },
   };
 }
