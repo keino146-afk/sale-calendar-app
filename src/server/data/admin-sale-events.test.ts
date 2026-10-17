@@ -70,6 +70,7 @@ describe("listAdminSaleEvents", () => {
       { method: "order", args: ["created_at", { ascending: false }] },
       { method: "order", args: ["id", { ascending: true }] },
       { method: "limit", args: [ADMIN_LIST_LIMIT] },
+      { method: "abortSignal", args: [expect.any(AbortSignal)] },
       { method: "overrideTypes", args: [] },
     ]);
     expect(ADMIN_LIST_LIMIT).toBe(100);
@@ -136,6 +137,7 @@ describe("countPendingSaleEvents", () => {
     expect(f.calls).toEqual([
       { method: "select", args: ["id", { count: "exact", head: true }] },
       { method: "eq", args: ["status", "pending_review"] },
+      { method: "abortSignal", args: [expect.any(AbortSignal)] },
     ]);
   });
 
@@ -161,6 +163,7 @@ describe("getAdminSaleEvent", () => {
     expect(f.calls).toEqual([
       { method: "select", args: [EXPECTED_COLUMNS] },
       { method: "eq", args: ["id", SALE_ID] },
+      { method: "abortSignal", args: [expect.any(AbortSignal)] },
       { method: "maybeSingle", args: [] },
       { method: "overrideTypes", args: [] },
     ]);
@@ -201,6 +204,7 @@ describe("getLatestRejectReason", () => {
       { method: "order", args: ["created_at", { ascending: false }] },
       { method: "order", args: ["id", { ascending: false }] },
       { method: "limit", args: [1] },
+      { method: "abortSignal", args: [expect.any(AbortSignal)] },
       { method: "maybeSingle", args: [] },
       { method: "overrideTypes", args: [] },
     ]);
@@ -220,5 +224,19 @@ describe("getLatestRejectReason", () => {
     await expect(
       getLatestRejectReason(client(fake({ data: null, error: { code: "42501" } })), SALE_ID),
     ).rejects.toBeInstanceOf(DataAccessError);
+  });
+});
+
+describe("aborted (timed-out) admin reads", () => {
+  // postgrest-js turns an aborted request into an error result like this one.
+  const aborted = { data: null, error: { code: "", message: "AbortError: This operation was aborted" } };
+
+  it("are failures, never an empty list, a zero count or a missing sale", async () => {
+    await expect(listAdminSaleEvents(client(fake(aborted)), { status: "published" })).rejects.toBeInstanceOf(
+      DataAccessError,
+    );
+    await expect(countPendingSaleEvents(client(fake(aborted)))).rejects.toBeInstanceOf(DataAccessError);
+    await expect(getAdminSaleEvent(client(fake(aborted)), SALE_ID)).rejects.toBeInstanceOf(DataAccessError);
+    await expect(getLatestRejectReason(client(fake(aborted)), SALE_ID)).rejects.toBeInstanceOf(DataAccessError);
   });
 });

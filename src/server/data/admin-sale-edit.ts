@@ -1,5 +1,6 @@
 import "server-only";
 
+import { adminReadSignal } from "./admin-read-timeout";
 import type { AdminSupabaseClient } from "@/server/supabase/admin-client";
 import { isAdminSaleStatus, type AdminSaleStatus } from "@/lib/admin-sale-status";
 import type { SaleContentInput } from "@/lib/sale-candidate-form";
@@ -56,6 +57,7 @@ export async function getAdminSaleEventForEdit(
     .from("sale_events")
     .select(EDITABLE_SALE_COLUMNS)
     .eq("id", id)
+    .abortSignal(adminReadSignal())
     .maybeSingle()
     .overrideTypes<EditableSaleRow | null, { merge: false }>();
 

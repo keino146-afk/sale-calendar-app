@@ -45,6 +45,7 @@ describe("listActiveRetailersForAdmin", () => {
     expect(f.tables).toEqual(["retailers"]);
     expect(f.calls).toContainEqual({ method: "eq", args: ["is_active", true] });
     expect(f.calls).toContainEqual({ method: "order", args: ["sort_order", { ascending: true }] });
+    expect(f.calls).toContainEqual({ method: "abortSignal", args: [expect.any(AbortSignal)] });
   });
 
   it("throws a generic error on failure", async () => {
@@ -60,6 +61,7 @@ describe("getActiveRetailerForAdmin", () => {
 
     expect(await getActiveRetailerForAdmin(f.client as never, RETAILER_ID)).toBeNull();
     expect(f.calls).toContainEqual({ method: "eq", args: ["id", RETAILER_ID] });
+    expect(f.calls).toContainEqual({ method: "abortSignal", args: [expect.any(AbortSignal)] });
     expect(f.calls).toContainEqual({ method: "eq", args: ["is_active", true] });
   });
 });

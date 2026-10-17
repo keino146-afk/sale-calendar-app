@@ -1,5 +1,6 @@
 import "server-only";
 
+import { adminReadSignal } from "./admin-read-timeout";
 import type { AdminSupabaseClient } from "@/server/supabase/admin-client";
 import type { SaleEventAppInsert } from "@/server/supabase/app-database";
 import type { SaleCandidateInput } from "@/lib/sale-candidate-form";
@@ -37,6 +38,7 @@ export async function listActiveRetailersForAdmin(
     .eq("is_active", true)
     .order("sort_order", { ascending: true })
     .order("slug", { ascending: true })
+    .abortSignal(adminReadSignal())
     .overrideTypes<RetailerRow[], { merge: false }>();
 
   if (error) {
@@ -56,6 +58,7 @@ export async function getActiveRetailerForAdmin(
     .select("id, slug, name, official_base_url")
     .eq("id", id)
     .eq("is_active", true)
+    .abortSignal(adminReadSignal())
     .maybeSingle()
     .overrideTypes<RetailerRow | null, { merge: false }>();
 
