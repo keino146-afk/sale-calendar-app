@@ -10,6 +10,12 @@ import type { Database } from "./database.types";
 
 export type PublicSupabaseClient = SupabaseClient<Database>;
 
+// Upper bound for each PostgREST request, so a request that never answers
+// cannot hold a page indefinitely. Normal public reads take well under a
+// second. An aborted request is not retried by postgrest-js; it fails like
+// any other read error (pages then show their error state).
+export const PUBLIC_DB_TIMEOUT_MS = 5000;
+
 let client: PublicSupabaseClient | undefined;
 
 export function getPublicSupabaseClient(): PublicSupabaseClient {
@@ -25,6 +31,7 @@ export function getPublicSupabaseClient(): PublicSupabaseClient {
         // Avoid serving stale public data from Next.js' fetch cache.
         fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
       },
+      db: { timeout: PUBLIC_DB_TIMEOUT_MS },
     });
   }
   return client;
