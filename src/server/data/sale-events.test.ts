@@ -190,6 +190,8 @@ describe("getNextPublishedSaleEvent", () => {
       { method: "order", args: ["starts_at", { ascending: true }] },
       { method: "order", args: ["id", { ascending: true }] },
       { method: "limit", args: [1] },
+      // A hint only: no automatic retries on failure.
+      { method: "retry", args: [false] },
       { method: "overrideTypes", args: [] },
     ]);
   });
@@ -324,5 +326,44 @@ describe("listSitemapSaleEvents", () => {
 
     await expect(promise).rejects.toBeInstanceOf(DataAccessError);
     await expect(promise).rejects.not.toThrow(/permission denied|42501/);
+  });
+});
+
+describe("automatic retries", () => {
+  // postgrest-js retries 503/520 and network errors (up to 3 times). Only the
+  // optional next-sale hint opts out; every primary public read keeps them.
+  it.each([
+    ["listPublishedSaleEvents", () => listPublishedSaleEvents({ from: FROM, to: TO }), []],
+    ["getPublishedSaleEvent", () => getPublishedSaleEvent(EVENT_ID), null],
+    ["listSitemapSaleEvents", () => listSitemapSaleEvents({ now: FROM }), []],
+  ] as const)("keeps retries for %s", async (_label, read, data) => {
+    const fake = useFake({ data, error: null });
+
+    await read();
+
+    expect(methods(fake.calls)).not.toContain("retry");
+  });
+
+  it("turns them off only for the next-sale hint", async () => {
+    const fake = useFake({ data: [], error: null });
+
+    await getNextPublishedSaleEvent({ after: FROM });
+
+    expect(fake.calls.filter((call) => call.method === "retry")).toEqual([{ method: "retry", args: [false] }]);
+  });
+
+  it("treats an aborted (timed-out) request as a failure, never as an empty result", async () => {
+    // postgrest-js turns an abort into an error result like this one.
+    const aborted = {
+      data: null,
+      error: { code: "", message: "AbortError: This operation was aborted" },
+    };
+
+    useFake(aborted);
+    await expect(listPublishedSaleEvents({ from: FROM, to: TO })).rejects.toBeInstanceOf(DataAccessError);
+    useFake(aborted);
+    await expect(getNextPublishedSaleEvent({ after: FROM })).rejects.toBeInstanceOf(DataAccessError);
+    useFake(aborted);
+    await expect(listSitemapSaleEvents({ now: FROM })).rejects.toBeInstanceOf(DataAccessError);
   });
 });

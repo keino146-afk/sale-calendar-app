@@ -17,6 +17,7 @@ const CHAIN_METHODS = [
   "gte",
   "order",
   "limit",
+  "retry",
   "maybeSingle",
   "single",
   "insert",

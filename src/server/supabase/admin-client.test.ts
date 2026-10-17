@@ -57,6 +57,13 @@ describe("adminCookieOptions", () => {
 });
 
 describe("createAdminSupabaseClient", () => {
+  it("keeps the library's default request handling (no public-read timeout)", async () => {
+    await createAdminSupabaseClient();
+
+    // The 5 s PostgREST timeout is for anonymous public reads only.
+    expect(lastOptions()).not.toHaveProperty("db");
+  });
+
   it("uses only the URL and publishable key with admin cookie options", async () => {
     await createAdminSupabaseClient();
 
