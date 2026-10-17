@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies, headers } from "next/headers";
 import { adminCookieOptions, createAdminSupabaseClient } from "@/server/supabase/admin-client";
-import { isCurrentUserAdmin, signOutGlobally } from "./admin-session";
+import { checkCurrentUserAdmin, signOutGlobally, signOutLocally } from "./admin-session";
 
 export type LoginCredentials = { email: string; password: string };
 
@@ -46,8 +46,10 @@ export async function isSameOriginRequest(): Promise<boolean> {
   return isSameOrigin(requestHeaders.get("origin"), host ?? null);
 }
 
-// Signs in and keeps the session only for admins. Wrong credentials and
-// non-admin accounts both return false; nothing about the account leaks.
+// Signs in and keeps the session only for admins. Wrong credentials,
+// non-admin accounts and a failed admin check all return false; nothing about
+// the account leaks. A confirmed non-admin is signed out everywhere; when the
+// check itself failed, only the session just created here is ended.
 export async function signInAdmin({ email, password }: LoginCredentials): Promise<boolean> {
   let supabase;
   try {
@@ -63,9 +65,11 @@ export async function signInAdmin({ email, password }: LoginCredentials): Promis
     return false;
   }
 
-  if (await isCurrentUserAdmin(supabase)) return true;
+  const authorization = await checkCurrentUserAdmin(supabase);
+  if (authorization === "authorized") return true;
 
-  await signOutGlobally(supabase);
+  if (authorization === "not_authorized") await signOutGlobally(supabase);
+  else await signOutLocally(supabase);
   return false;
 }
 

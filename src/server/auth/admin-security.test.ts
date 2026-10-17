@@ -229,14 +229,41 @@ describe("admin security boundary", () => {
     );
   });
 
-  it("guards every admin page with requireAdmin, except the login page", async () => {
+  it("guards every admin page with requireAdmin, except the login and unavailable pages", async () => {
     const pages = APP_CODE.filter(
-      (file) => file.startsWith("src/app/admin/") && file.endsWith("page.tsx") && !file.includes("/login/"),
+      (file) =>
+        file.startsWith("src/app/admin/") &&
+        file.endsWith("page.tsx") &&
+        !file.includes("/login/") &&
+        !file.includes("/unavailable/"),
     );
     expect(pages.length).toBeGreaterThan(0);
     for (const page of pages) {
       expect(await readFile(page, "utf8")).toMatch(/await requireAdmin\(\)/);
     }
+  });
+
+  it("keeps the unavailable page free of session, Auth and database code (no redirect loop)", async () => {
+    const code = (await readFile("src/app/admin/unavailable/page.tsx", "utf8")).replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toMatch(
+      /"use client"|@\/server\/|@supabase|next\/headers|next\/navigation|requireAdmin|checkAdmin|getUser|current_user_is_admin|\.rpc\(|\.from\(|auth\.|signOut|cookies|redirect\(|connection\(/,
+    );
+    // Only next/link is imported, and the only link goes back to /admin.
+    expect([...code.matchAll(/from "([^"]+)"/g)].map(([, source]) => source)).toEqual(["next/link"]);
+    expect([...code.matchAll(/href="([^"]+)"/g)].map(([, href]) => href)).toEqual(["/admin"]);
+  });
+
+  it("signs out globally only for a confirmed non-admin, never for a failed check", async () => {
+    const strip = (code: string) => code.replace(/^\s*\/\/.*$/gm, "");
+    const session = strip(await readFile("src/server/auth/admin-session.ts", "utf8"));
+    expect(session).toContain('if (result.kind === "unavailable") redirect(ADMIN_UNAVAILABLE_PATH);');
+    expect(session).toContain('if (authorization === "authorized") return { kind: "admin", supabase };');
+    expect(session).toContain('if (authorization === "not_authorized") return { kind: "denied", supabase };');
+    expect(session).toContain('return { kind: "unavailable" };');
+    const auth = strip(await readFile("src/server/auth/admin-auth.ts", "utf8"));
+    expect(auth).toMatch(/if \(authorization === "not_authorized"\) await signOutGlobally\(supabase\);\s*else await signOutLocally\(supabase\);/);
+    // Only the admin-session helpers call auth.signOut().
+    expect(await filesMatching(APP_CODE, /auth\.signOut\(/)).toEqual(["src/server/auth/admin-session.ts"]);
   });
 
   it("bounds admin screen reads only, never writes, the admin check or Auth", async () => {
@@ -251,7 +278,7 @@ describe("admin security boundary", () => {
     ]);
     expect(await readFile("src/server/supabase/admin-client.ts", "utf8")).not.toMatch(/\bdb\s*:|timeout|abortSignal/i);
 
-    // The admin check (any error signs the admin out everywhere), the source
+    // The admin check (kept without a timeout by design), the source
     // policy check, every write RPC, the insert and all Auth calls stay
     // without a signal: each call chain up to its end has no abortSignal.
     for (const file of APP_CODE) {
