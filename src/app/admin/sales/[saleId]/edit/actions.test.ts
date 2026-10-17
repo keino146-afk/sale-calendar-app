@@ -119,6 +119,15 @@ describe("updateSaleAction guards", () => {
     expect(mocks.updateSaleEvent).not.toHaveBeenCalled();
   });
 
+  it("never reads or saves when the admin check could not be completed", async () => {
+    mocks.requireAdmin.mockImplementation(() => mocks.redirect("/admin/unavailable"));
+
+    expect(await submit()).toBe("/admin/unavailable");
+    expect(mocks.getAdminSaleEventForEdit).not.toHaveBeenCalled();
+    expect(mocks.checkSaleSourceUrl).not.toHaveBeenCalled();
+    expect(mocks.updateSaleEvent).not.toHaveBeenCalled();
+  });
+
   it("rejects a malformed sale id without reading", async () => {
     expect(await submit({ saleId: "x&error=y" })).toBe("/admin");
     expect(mocks.getAdminSaleEventForEdit).not.toHaveBeenCalled();
