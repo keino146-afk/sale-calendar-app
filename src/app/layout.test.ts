@@ -5,7 +5,7 @@ vi.mock("next/font/google", () => ({
   Geist_Mono: () => ({ variable: "font-mono" }),
 }));
 
-const { metadata } = await import("./layout");
+const { metadata, viewport } = await import("./layout");
 
 describe("root metadata", () => {
   it("resolves relative URLs against the Production origin", () => {
@@ -22,6 +22,10 @@ describe("root metadata", () => {
     expect(metadata.openGraph).not.toHaveProperty("images");
     expect(metadata.twitter).toMatchObject({ card: "summary" });
     expect(metadata.twitter).not.toHaveProperty("images");
+  });
+
+  it("sets only the browser theme colour in the viewport (the icon's red)", () => {
+    expect(viewport).toEqual({ themeColor: "#E60418" });
   });
 
   it("sets no canonical or Open Graph URL for pages that do not set their own", () => {

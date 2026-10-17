@@ -6,6 +6,7 @@ import { cache } from "react";
 import { MonthGrid, type MonthGridEvent } from "@/components/MonthGrid";
 import { RetailerFilter } from "@/components/RetailerFilter";
 import { SaleList, type SaleListItem } from "@/components/SaleList";
+import { SiteFooter } from "@/components/SiteFooter";
 import { listActiveRetailers, type RetailerDto } from "@/server/data/retailers";
 import { listPublishedSaleEvents, type SaleEventDto } from "@/server/data/sale-events";
 import {
@@ -101,39 +102,42 @@ export default async function CalendarPage({ searchParams }: PageProps<"/calenda
   const sales = data.ok ? data.sales : null;
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3 px-4 pb-12 pt-3">
-      <header className="grid grid-cols-[1fr_auto_1fr] items-center">
-        <Link
-          href="/"
-          aria-label="ホームへ戻る"
-          className="flex h-9 w-9 items-center justify-center rounded-full text-blue-500"
-        >
-          <ChevronIcon direction="left" />
-        </Link>
-        <h1 className="text-[17px] font-semibold">カレンダー</h1>
-        <Link
-          href={calendarHref(null, selectedRetailerSlug)}
-          aria-label="今日を表示"
-          className="justify-self-end rounded-full border border-blue-500 px-3 py-1 text-sm font-medium text-blue-500"
-        >
-          今日
-        </Link>
-      </header>
-      {retailers === null || sales === null ? (
-        <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm shadow-sm">
-          セール情報を読み込めませんでした
-        </p>
-      ) : (
-        <CalendarContent
-          yearMonth={yearMonth}
-          dayParam={day}
-          retailers={retailers}
-          selectedRetailerSlug={selectedRetailerSlug}
-          sales={sales}
-          now={now}
-        />
-      )}
-    </main>
+    <>
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3 px-4 pb-12 pt-3">
+        <header className="grid grid-cols-[1fr_auto_1fr] items-center">
+          <Link
+            href="/"
+            aria-label="ホームへ戻る"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-blue-500"
+          >
+            <ChevronIcon direction="left" />
+          </Link>
+          <h1 className="text-[17px] font-semibold">カレンダー</h1>
+          <Link
+            href={calendarHref(null, selectedRetailerSlug)}
+            aria-label="今日を表示"
+            className="justify-self-end rounded-full border border-blue-500 px-3 py-1 text-sm font-medium text-blue-500"
+          >
+            今日
+          </Link>
+        </header>
+        {retailers === null || sales === null ? (
+          <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm shadow-sm">
+            セール情報を読み込めませんでした
+          </p>
+        ) : (
+          <CalendarContent
+            yearMonth={yearMonth}
+            dayParam={day}
+            retailers={retailers}
+            selectedRetailerSlug={selectedRetailerSlug}
+            sales={sales}
+            now={now}
+          />
+        )}
+      </main>
+      <SiteFooter />
+    </>
   );
 }
 
