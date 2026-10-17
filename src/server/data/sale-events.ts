@@ -150,6 +150,9 @@ export async function getNextPublishedSaleEvent({
     .order("starts_at", { ascending: true })
     .order("id", { ascending: true })
     .limit(1)
+    // Only a hint: when it fails the page is shown without it, so it is not
+    // worth postgrest-js' automatic retries (up to ~7s of backoff).
+    .retry(false)
     .overrideTypes<SaleEventRow[], { merge: false }>();
 
   if (error) {
