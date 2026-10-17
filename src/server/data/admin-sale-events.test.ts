@@ -6,7 +6,7 @@ const { listAdminSaleEvents, countPendingSaleEvents, getAdminSaleEvent, getLates
 const { DataAccessError } = await import("./errors");
 
 const EXPECTED_COLUMNS =
-  "id, title, description, starts_at, ends_at, is_date_only, status, source_url, source_checked_at, published_at, rejected_at, archived_at, retailers!inner(slug, name)";
+  "id, title, description, starts_at, ends_at, is_date_only, status, source_url, source_checked_at, published_at, rejected_at, archived_at, updated_at, retailers!inner(slug, name)";
 
 const SALE_ID = "33333333-3333-4333-8333-333333333333";
 
@@ -23,6 +23,8 @@ const ROW = {
   published_at: null,
   rejected_at: null,
   archived_at: null,
+  // Microsecond precision, exactly as PostgREST returns it.
+  updated_at: "2026-10-14T03:04:05.123456+00:00",
   retailers: { slug: "rakuten", name: "楽天市場" },
 };
 
@@ -39,6 +41,8 @@ const DTO = {
   publishedAt: null,
   rejectedAt: null,
   archivedAt: null,
+  // Passed through as the raw string (no Date round trip).
+  updatedAt: "2026-10-14T03:04:05.123456+00:00",
   retailer: { slug: "rakuten", name: "楽天市場" },
 };
 
@@ -98,7 +102,9 @@ describe("listAdminSaleEvents", () => {
     await listAdminSaleEvents(client(f), { status: "published" });
 
     const select = String(f.calls[0].args[0]);
-    for (const internal of ["title_key", "start_date_jst", "created_at", "updated_at", "retailer_id", "*"]) {
+    // updated_at is selected on purpose: it is the page version the
+    // lifecycle RPCs check (Phase 6O).
+    for (const internal of ["title_key", "start_date_jst", "created_at", "retailer_id", "*"]) {
       expect(select).not.toContain(internal);
     }
   });

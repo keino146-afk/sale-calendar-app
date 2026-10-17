@@ -90,9 +90,12 @@ export async function getAdminSaleEventForEdit(
 export type UpdateSaleReason = "duplicate" | "stale" | "not_editable" | "not_found" | "invalid_input" | "failed";
 export type UpdateSaleResult = { ok: true } | { ok: false; reason: UpdateSaleReason };
 
-// Only these database codes are mapped; messages are never passed on.
+// Only these database codes are mapped; messages are never passed on. Stale
+// is P0409 (Phase 6O); 40001 is what update_sale_event raised before that
+// migration and is still read as stale.
 const REASONS: Record<string, Exclude<UpdateSaleReason, "failed">> = {
   "23505": "duplicate",
+  P0409: "stale",
   "40001": "stale",
   "55000": "not_editable",
   P0002: "not_found",

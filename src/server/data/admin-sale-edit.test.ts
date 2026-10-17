@@ -127,6 +127,7 @@ describe("updateSaleEvent", () => {
 
   it.each([
     ["23505", "duplicate"],
+    ["P0409", "stale"],
     ["40001", "stale"],
     ["55000", "not_editable"],
     ["P0002", "not_found"],

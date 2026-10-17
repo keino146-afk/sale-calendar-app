@@ -30,6 +30,9 @@ const PAST_END_NOTICES: Partial<Record<AdminSaleEventDto["status"], string>> = {
     "終了日時を過ぎています。このまま公開すると、公開ページでは「終了しました」と表示されます。期間を確認してください。",
 };
 
+// Same wording as the edit page's stale message.
+const STALE_MESSAGE = "このセールは別の画面ですでに更新されています。最新の内容を確認してからもう一度操作してください";
+
 const DONE_MESSAGES: Record<string, string> = {
   created: "登録しました",
   published: "公開しました",
@@ -116,7 +119,7 @@ export default async function AdminSaleDetailPage({
       ) : null}
       {error !== undefined ? (
         <p role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-center text-sm text-red-700">
-          操作を完了できませんでした
+          {error === "stale" ? STALE_MESSAGE : "操作を完了できませんでした"}
         </p>
       ) : null}
       {pastEnd ? (
@@ -174,11 +177,13 @@ export default async function AdminSaleDetailPage({
 function ActionButton({
   action,
   saleId,
+  updatedAt,
   label,
   tone,
 }: {
   action: (formData: FormData) => Promise<void>;
   saleId: string;
+  updatedAt: string;
   label: string;
   tone: "primary" | "danger" | "neutral";
 }) {
@@ -190,6 +195,8 @@ function ActionButton({
   return (
     <form action={action}>
       <input type="hidden" name="saleId" value={saleId} />
+      {/* The version this page shows; the RPC refuses the transition if the sale changed since. */}
+      <input type="hidden" name="expectedUpdatedAt" value={updatedAt} />
       <SubmitButton className={`w-full rounded-xl px-4 py-2.5 text-[15px] font-semibold ${toneClass}`}>
         {label}
       </SubmitButton>
@@ -204,7 +211,7 @@ function LifecycleActions({ sale }: { sale: AdminSaleEventDto }) {
     <section aria-label="操作" className="flex flex-col gap-2">
       {sale.status === "pending_review" ? (
         <>
-          <ActionButton action={publishSaleAction} saleId={sale.id} label="公開する" tone="primary" />
+          <ActionButton action={publishSaleAction} saleId={sale.id} updatedAt={sale.updatedAt} label="公開する" tone="primary" />
           <Link
             href={`/admin/sales/${sale.id}/reject`}
             className="w-full rounded-xl border border-red-300 bg-white px-4 py-2.5 text-center text-[15px] font-semibold text-red-600"
@@ -214,10 +221,10 @@ function LifecycleActions({ sale }: { sale: AdminSaleEventDto }) {
         </>
       ) : null}
       {sale.status === "published" ? (
-        <ActionButton action={archiveSaleAction} saleId={sale.id} label="終了する" tone="danger" />
+        <ActionButton action={archiveSaleAction} saleId={sale.id} updatedAt={sale.updatedAt} label="終了する" tone="danger" />
       ) : null}
       {sale.status === "rejected" ? (
-        <ActionButton action={reopenSaleAction} saleId={sale.id} label="確認待ちに戻す" tone="neutral" />
+        <ActionButton action={reopenSaleAction} saleId={sale.id} updatedAt={sale.updatedAt} label="確認待ちに戻す" tone="neutral" />
       ) : null}
     </section>
   );

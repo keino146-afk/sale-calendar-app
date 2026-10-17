@@ -34,11 +34,16 @@ const { publishSaleAction, rejectSaleAction, archiveSaleAction, reopenSaleAction
 
 const ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const CLIENT = { fake: "admin client" };
+// The page version as rendered (raw PostgREST string, microseconds intact).
+const UPDATED_AT = "2026-10-14T03:04:05.123456+00:00";
 const RPCS = [mocks.publishSaleEvent, mocks.rejectSaleEvent, mocks.archiveSaleEvent, mocks.reopenSaleEvent];
 
-function form(fields: Record<string, string>) {
+// Every lifecycle form posts the page version; pass undefined to leave it out.
+function form(fields: Record<string, string | undefined>) {
   const data = new FormData();
-  for (const [key, value] of Object.entries(fields)) data.set(key, value);
+  for (const [key, value] of Object.entries({ expectedUpdatedAt: UPDATED_AT, ...fields })) {
+    if (value !== undefined) data.set(key, value);
+  }
   return data;
 }
 
@@ -109,6 +114,19 @@ describe.each(ALL_ACTIONS)("%s action guards", (_name, action, extra) => {
     for (const rpc of RPCS) expect(rpc).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["missing", undefined],
+    ["empty", ""],
+    ["not a timestamp", "yesterday"],
+    ["a Date string (precision lost)", "Wed Oct 14 2026 12:04:05 GMT+0900"],
+    ["with injected query", `${"2026-10-14T03:04:05.123456+00:00"}&error=x`],
+  ])("never reaches the RPC when the page version is %s", async (_label, expectedUpdatedAt) => {
+    expect(await redirectUrl(action(form({ saleId: ID, expectedUpdatedAt, ...extra })))).toBe(
+      `/admin/sales/${ID}?error=1`,
+    );
+    for (const rpc of RPCS) expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("checks Origin, then the admin session, then calls the RPC", async () => {
     const order: string[] = [];
     mocks.isSameOriginRequest.mockImplementation(async () => (order.push("origin"), true));
@@ -124,14 +142,20 @@ describe.each(ALL_ACTIONS)("%s action guards", (_name, action, extra) => {
 describe.each(SIMPLE_ACTIONS)("%s action", (_name, action, rpc, done) => {
   it("calls only its RPC with the admin client and shows the success message", async () => {
     expect(await redirectUrl(action(form({ saleId: ID })))).toBe(`/admin/sales/${ID}?done=${done}`);
-    expect(rpc).toHaveBeenCalledWith(CLIENT, ID);
+    expect(rpc).toHaveBeenCalledWith(CLIENT, ID, UPDATED_AT);
     for (const other of RPCS.filter((candidate) => candidate !== rpc)) expect(other).not.toHaveBeenCalled();
   });
 
   it("shows the generic failure when the RPC refuses (e.g. wrong state)", async () => {
-    rpc.mockResolvedValue({ ok: false });
+    rpc.mockResolvedValue({ ok: false, reason: "failed" });
 
     expect(await redirectUrl(action(form({ saleId: ID })))).toBe(`/admin/sales/${ID}?error=1`);
+  });
+
+  it("sends a stale page back to the reloaded detail page with the stale message", async () => {
+    rpc.mockResolvedValue({ ok: false, reason: "stale" });
+
+    expect(await redirectUrl(action(form({ saleId: ID })))).toBe(`/admin/sales/${ID}?error=stale`);
   });
 });
 
@@ -140,7 +164,7 @@ describe("reject action", () => {
     expect(await redirectUrl(rejectSaleAction(form({ saleId: ID, reason: "　期間が誤り\n" })))).toBe(
       `/admin/sales/${ID}?done=rejected`,
     );
-    expect(mocks.rejectSaleEvent).toHaveBeenCalledWith(CLIENT, ID, "期間が誤り");
+    expect(mocks.rejectSaleEvent).toHaveBeenCalledWith(CLIENT, ID, "期間が誤り", UPDATED_AT);
   });
 
   it.each([
@@ -161,10 +185,18 @@ describe("reject action", () => {
   });
 
   it("shows the generic failure when the RPC refuses", async () => {
-    mocks.rejectSaleEvent.mockResolvedValue({ ok: false });
+    mocks.rejectSaleEvent.mockResolvedValue({ ok: false, reason: "failed" });
 
     expect(await redirectUrl(rejectSaleAction(form({ saleId: ID, reason: "理由" })))).toBe(
       `/admin/sales/${ID}?error=1`,
+    );
+  });
+
+  it("sends a stale rejection back to the reloaded detail page with the stale message", async () => {
+    mocks.rejectSaleEvent.mockResolvedValue({ ok: false, reason: "stale" });
+
+    expect(await redirectUrl(rejectSaleAction(form({ saleId: ID, reason: "理由" })))).toBe(
+      `/admin/sales/${ID}?error=stale`,
     );
   });
 });
