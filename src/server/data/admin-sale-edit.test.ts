@@ -69,6 +69,7 @@ describe("getAdminSaleEventForEdit", () => {
     expect(f.calls).toEqual([
       { method: "select", args: [EXPECTED_COLUMNS] },
       { method: "eq", args: ["id", SALE_ID] },
+      { method: "abortSignal", args: [expect.any(AbortSignal)] },
       { method: "maybeSingle", args: [] },
       { method: "overrideTypes", args: [] },
     ]);

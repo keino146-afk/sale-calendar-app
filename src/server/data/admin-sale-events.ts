@@ -1,5 +1,6 @@
 import "server-only";
 
+import { adminReadSignal } from "./admin-read-timeout";
 import type { AdminSupabaseClient } from "@/server/supabase/admin-client";
 import { isAdminSaleStatus, type AdminSaleStatus } from "@/lib/admin-sale-status";
 import { DataAccessError } from "./errors";
@@ -97,6 +98,7 @@ export async function listAdminSaleEvents(
     .order(ORDER_COLUMN[status], { ascending: false })
     .order("id", { ascending: true })
     .limit(ADMIN_LIST_LIMIT)
+    .abortSignal(adminReadSignal())
     .overrideTypes<AdminSaleEventRow[], { merge: false }>();
 
   if (error) fail("listAdminSaleEvents", error);
@@ -107,7 +109,8 @@ export async function countPendingSaleEvents(supabase: AdminSupabaseClient): Pro
   const { count, error } = await supabase
     .from("sale_events")
     .select("id", { count: "exact", head: true })
-    .eq("status", "pending_review");
+    .eq("status", "pending_review")
+    .abortSignal(adminReadSignal());
 
   if (error || count === null) fail("countPendingSaleEvents", error);
   return count;
@@ -124,6 +127,7 @@ export async function getAdminSaleEvent(
     .from("sale_events")
     .select(ADMIN_SALE_EVENT_COLUMNS)
     .eq("id", id)
+    .abortSignal(adminReadSignal())
     .maybeSingle()
     .overrideTypes<AdminSaleEventRow | null, { merge: false }>();
 
@@ -147,6 +151,7 @@ export async function getLatestRejectReason(
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(1)
+    .abortSignal(adminReadSignal())
     .maybeSingle()
     .overrideTypes<{ note: string | null } | null, { merge: false }>();
 
