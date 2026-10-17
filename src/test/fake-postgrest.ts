@@ -18,6 +18,7 @@ const CHAIN_METHODS = [
   "order",
   "limit",
   "retry",
+  "abortSignal",
   "maybeSingle",
   "single",
   "insert",

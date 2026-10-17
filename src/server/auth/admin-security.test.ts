@@ -238,4 +238,38 @@ describe("admin security boundary", () => {
       expect(await readFile(page, "utf8")).toMatch(/await requireAdmin\(\)/);
     }
   });
+
+  it("bounds admin screen reads only, never writes, the admin check or Auth", async () => {
+    // Per-read abort signals (admin-read-timeout.ts) are used by the admin
+    // screen-read modules only; no client-wide timeout exists.
+    expect(await filesMatching(APP_CODE, /abortSignal\(|adminReadSignal/)).toEqual([
+      "src/server/data/admin-collection-candidates.ts",
+      "src/server/data/admin-read-timeout.ts",
+      "src/server/data/admin-sale-create.ts",
+      "src/server/data/admin-sale-edit.ts",
+      "src/server/data/admin-sale-events.ts",
+    ]);
+    expect(await readFile("src/server/supabase/admin-client.ts", "utf8")).not.toMatch(/\bdb\s*:|timeout|abortSignal/i);
+
+    // The admin check (any error signs the admin out everywhere), the source
+    // policy check, every write RPC, the insert and all Auth calls stay
+    // without a signal: each call chain up to its end has no abortSignal.
+    for (const file of APP_CODE) {
+      const code = await readFile(file, "utf8");
+      for (const match of code.matchAll(/\.(rpc|insert)\(|\bauth\.[a-zA-Z]+\(/g)) {
+        const end = code.indexOf(";", match.index);
+        expect(code.slice(match.index, end === -1 ? undefined : end), `${file}: ${match[0]}`).not.toMatch(/abortSignal|signal\s*:/);
+      }
+    }
+    for (const file of [
+      "src/server/auth/admin-session.ts",
+      "src/server/auth/admin-auth.ts",
+      "src/server/data/admin-source-policy.ts",
+      "src/server/data/admin-sale-actions.ts",
+      "src/server/data/admin-candidate-import.ts",
+      "src/proxy.ts",
+    ]) {
+      expect(await readFile(file, "utf8"), file).not.toMatch(/abortSignal|adminReadSignal|AbortSignal/);
+    }
+  });
 });

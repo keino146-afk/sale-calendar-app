@@ -1,5 +1,6 @@
 import "server-only";
 
+import { adminReadSignal } from "./admin-read-timeout";
 import type { AdminSupabaseClient } from "@/server/supabase/admin-client";
 import { DataAccessError } from "./errors";
 
@@ -108,6 +109,7 @@ export async function listCollectionCandidates(
     .order("last_seen_at", { ascending: false })
     .order("id", { ascending: true })
     .limit(CANDIDATE_LIST_LIMIT)
+    .abortSignal(adminReadSignal())
     .overrideTypes<SummaryRow[], { merge: false }>();
 
   if (error) fail("listCollectionCandidates", error);
@@ -125,6 +127,7 @@ export async function getCollectionCandidate(
     .from("collection_candidates")
     .select(DETAIL_COLUMNS)
     .eq("id", id)
+    .abortSignal(adminReadSignal())
     .maybeSingle()
     .overrideTypes<DetailRow | null, { merge: false }>();
 

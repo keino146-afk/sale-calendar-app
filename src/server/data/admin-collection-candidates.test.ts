@@ -70,6 +70,7 @@ describe("listCollectionCandidates", () => {
     expect(f.calls).toContainEqual({ method: "eq", args: ["review_state", "new"] });
     expect(f.calls).toContainEqual({ method: "order", args: ["last_seen_at", { ascending: false }] });
     expect(f.calls).toContainEqual({ method: "limit", args: [CANDIDATE_LIST_LIMIT] });
+    expect(f.calls).toContainEqual({ method: "abortSignal", args: [expect.any(AbortSignal)] });
     expect(CANDIDATE_LIST_LIMIT).toBe(100);
     expect(f.calls.map((call) => call.method)).not.toContain("insert");
   });
@@ -102,6 +103,7 @@ describe("getCollectionCandidate", () => {
     });
     expect(String(f.calls[0].args[0])).not.toMatch(/hash/);
     expect(f.calls).toContainEqual({ method: "eq", args: ["id", ID] });
+    expect(f.calls).toContainEqual({ method: "abortSignal", args: [expect.any(AbortSignal)] });
   });
 
   it("exposes the linked sale of an imported candidate only as a valid id", async () => {
