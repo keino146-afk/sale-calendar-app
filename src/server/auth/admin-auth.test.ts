@@ -28,14 +28,15 @@ function form(fields: Record<string, string>) {
 function fakeClient({
   signInError = null as Error | null,
   session = { access_token: "fake" } as object | null,
-  isAdmin = true,
+  isAdmin = true as boolean | null,
+  rpcError = null as { code: string } | null,
 } = {}) {
   return {
     auth: {
       signInWithPassword: vi.fn(async () => ({ data: { session }, error: signInError })),
       signOut: vi.fn(async () => ({ error: null })),
     },
-    rpc: vi.fn(async () => ({ data: isAdmin, error: null })),
+    rpc: vi.fn(async () => ({ data: isAdmin, error: rpcError })),
   };
 }
 
@@ -152,7 +153,22 @@ describe("signInAdmin", () => {
     createAdminSupabaseClient.mockResolvedValue(client);
 
     expect(await signInAdmin(credentials)).toBe(false);
+    expect(client.auth.signOut).toHaveBeenCalledTimes(1);
     expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "global" });
+  });
+
+  it.each([
+    ["errors", { isAdmin: null, rpcError: { code: "PGRST000" } }],
+    ["errors alongside true", { isAdmin: true, rpcError: { code: "PGRST000" } }],
+    ["returns no boolean", { isAdmin: null }],
+  ])("ends only the new session and fails generically when the admin check %s", async (_label, options) => {
+    const client = fakeClient(options);
+    createAdminSupabaseClient.mockResolvedValue(client);
+
+    expect(await signInAdmin(credentials)).toBe(false);
+    // Same result as a wrong password; other devices' sessions are untouched.
+    expect(client.auth.signOut).toHaveBeenCalledTimes(1);
+    expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
   });
 
   it("fails when auth is not configured", async () => {

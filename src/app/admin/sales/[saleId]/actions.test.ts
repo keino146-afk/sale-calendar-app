@@ -97,6 +97,13 @@ describe.each(ALL_ACTIONS)("%s action guards", (_name, action, extra) => {
     for (const rpc of RPCS) expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("never reaches the RPC when the admin check could not be completed", async () => {
+    mocks.requireAdmin.mockImplementation(() => mocks.redirect("/admin/unavailable"));
+
+    expect(await redirectUrl(action(form({ saleId: ID, ...extra })))).toBe("/admin/unavailable");
+    for (const rpc of RPCS) expect(rpc).not.toHaveBeenCalled();
+  });
+
   it.each(["", "not-a-uuid", `${ID}x`, "../../etc"])("does not call the RPC for sale id %j", async (saleId) => {
     expect(await redirectUrl(action(form({ saleId, ...extra })))).toBe("/admin");
     for (const rpc of RPCS) expect(rpc).not.toHaveBeenCalled();

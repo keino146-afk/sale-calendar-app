@@ -127,11 +127,24 @@ describe("createSaleCandidateAction guards", () => {
   it.each([
     ["unauthenticated", "/admin/login"],
     ["non-admin", "/admin/login?error=1"],
+    ["unverifiable (admin check failed)", "/admin/unavailable"],
   ])("never inserts for an %s visitor", async (_label, url) => {
     mocks.requireAdmin.mockImplementation(() => mocks.redirect(url));
 
     expect(await redirectUrl(createSaleCandidateAction(form(VALID)))).toBe(url);
     expect(mocks.getActiveRetailerForAdmin).not.toHaveBeenCalled();
+    expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("never imports a candidate when the admin check could not be completed", async () => {
+    mocks.requireAdmin.mockImplementation(() => mocks.redirect("/admin/unavailable"));
+
+    expect(await redirectUrl(createSaleCandidateAction(form({ ...VALID, candidateId: CANDIDATE_ID })))).toBe(
+      "/admin/unavailable",
+    );
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.importRpc).not.toHaveBeenCalled();
     expect(mocks.createSaleCandidate).not.toHaveBeenCalled();
   });
 
