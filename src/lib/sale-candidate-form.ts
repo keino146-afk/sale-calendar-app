@@ -234,3 +234,47 @@ export function saleFormDefaultsFromPeriod(input: {
     sourceCheckedAt: toJstDateTimeLocal(input.sourceCheckedAt),
   };
 }
+
+// Form defaults for "このセールを元に作成" (Phase 6Q): a new sale prefilled from
+// an existing one. The input type names the only fields that may be copied,
+// so the source's id, status, timestamps, version (updated_at) and audit
+// data cannot reach the form. The copy policy:
+//   - title, description, source URL and the period type (date only or
+//     with times) are copied;
+//   - the retailer is mapped by slug to an active retailer's id, and left
+//     unselected when the source's retailer is no longer active;
+//   - the period is left empty: the new dates must come from the official
+//     page, never from the previous sale;
+//   - the checked-at time is `now`, as on a blank form (the copied URL has
+//     not been checked for the new sale yet).
+// The values are only a starting point; the submission goes through the
+// normal create action and its validation.
+export type PreviousSaleSource = {
+  title: string;
+  description: string | null;
+  isDateOnly: boolean;
+  sourceUrl: string;
+  retailer: { slug: string };
+};
+
+export function saleFormDefaultsFromPreviousSale(
+  source: PreviousSaleSource,
+  activeRetailers: readonly { id: string; slug: string }[],
+  now: Date,
+): { defaults: SaleFormDefaults; mode: PeriodMode } {
+  const retailer = activeRetailers.find((candidate) => candidate.slug === source.retailer.slug);
+  return {
+    defaults: {
+      retailerId: retailer?.id ?? "",
+      title: source.title,
+      description: source.description ?? "",
+      startDate: "",
+      endDate: "",
+      startsAt: "",
+      endsAt: "",
+      sourceUrl: source.sourceUrl,
+      sourceCheckedAt: toJstDateTimeLocal(now),
+    },
+    mode: source.isDateOnly ? "date" : "datetime",
+  };
+}
