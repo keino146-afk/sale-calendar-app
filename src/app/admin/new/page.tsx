@@ -10,10 +10,12 @@ import {
   isCandidateId,
   type CollectionCandidateDetail,
 } from "@/server/data/admin-collection-candidates";
+import { getAdminSaleEvent, isSaleEventId } from "@/server/data/admin-sale-events";
 import {
   DESCRIPTION_MAX_LENGTH,
   parsePeriodMode,
   saleFormDefaultsFromPeriod,
+  saleFormDefaultsFromPreviousSale,
   toJstDateTimeLocal,
   type PeriodMode,
   type SaleFormDefaults,
@@ -40,7 +42,7 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
   const supabase = await requireAdmin();
   const now = new Date();
 
-  const { mode: rawMode, error, candidateId: rawCandidateId } = await searchParams;
+  const { mode: rawMode, error, candidateId: rawCandidateId, from: rawFrom } = await searchParams;
   const errorMessage = typeof error === "string" && Object.hasOwn(ERROR_MESSAGES, error) ? ERROR_MESSAGES[error] : null;
 
   let retailers: AdminRetailerOption[] | null;
@@ -73,9 +75,30 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
     }
     candidateUnavailable = candidate === null && !candidateClosed;
   }
+
+  // Optional prefill from a previous sale ("このセールを元に作成"). A
+  // candidateId takes precedence: then `from` is not read at all, and the two
+  // sources are never merged. Only the id travels in the URL; the sale is read
+  // here as the admin (RLS), any status, and only the fields named by
+  // saleFormDefaultsFromPreviousSale reach the form (no status, timestamps or
+  // version; the period stays empty). Nothing is written until the admin
+  // submits the normal create form; `from` is never part of that submission.
+  // A malformed id is ignored without querying.
+  const fromId = rawCandidateId === undefined && isSaleEventId(rawFrom) ? rawFrom : null;
+  let previous: ReturnType<typeof saleFormDefaultsFromPreviousSale> | null = null;
+  if (fromId !== null) {
+    try {
+      const sale = await getAdminSaleEvent(supabase, fromId);
+      if (sale !== null) previous = saleFormDefaultsFromPreviousSale(sale, retailers ?? [], now);
+    } catch (loadError) {
+      console.error(`[admin] previous sale prefill failed: ${loadError instanceof Error ? loadError.name : "UnknownError"}`);
+    }
+  }
+  const previousUnavailable = fromId !== null && previous === null;
+
   const defaults: SaleFormDefaults | null =
     candidate === null
-      ? null
+      ? (previous?.defaults ?? null)
       : saleFormDefaultsFromPeriod({
           retailerId: candidate.retailer.id,
           title: candidate.title,
@@ -86,7 +109,13 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
           sourceCheckedAt: new Date(candidate.sourceCheckedAt),
         });
   const mode: PeriodMode =
-    typeof rawMode === "string" || candidate === null ? parsePeriodMode(rawMode) : candidate.isDateOnly ? "date" : "datetime";
+    typeof rawMode === "string"
+      ? parsePeriodMode(rawMode)
+      : candidate !== null
+        ? candidate.isDateOnly
+          ? "date"
+          : "datetime"
+        : (previous?.mode ?? parsePeriodMode(rawMode));
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 pb-12 pt-6">
@@ -105,6 +134,11 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
           収集候補の内容を入力しました。公式ページで内容を確認・修正してから登録してください。
         </p>
       ) : null}
+      {previous !== null ? (
+        <p data-prefilled-from-previous-sale="true" className="rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          過去のセール情報を元に入力しています。開催期間は空欄です。公式ページで内容を確認し、新しい期間を入力してから登録してください。
+        </p>
+      ) : null}
       {candidate?.sourceChanged ? (
         <p role="alert" data-source-changed="true" className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
           収集後に公式情報が変更されています。登録前に公式ページを確認してください。
@@ -120,6 +154,11 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
           収集候補を読み込めませんでした
         </p>
       ) : null}
+      {previousUnavailable ? (
+        <p role="alert" data-previous-sale-unavailable="true" className="rounded-2xl bg-red-50 px-4 py-3 text-center text-sm text-red-700">
+          元のセールを読み込めませんでした
+        </p>
+      ) : null}
       {retailers === null ? (
         <p className="rounded-2xl bg-white px-4 py-6 text-center text-sm shadow-sm">店舗を読み込めませんでした</p>
       ) : (
@@ -128,6 +167,7 @@ export default async function AdminNewSalePage({ searchParams }: PageProps<"/adm
           retailers={retailers}
           defaults={defaults}
           candidateId={candidate === null ? null : candidate.id}
+          previousSaleId={previous === null ? null : fromId}
           checkedAtDefault={toJstDateTimeLocal(now)}
         />
       )}
@@ -140,12 +180,16 @@ function SaleForm({
   retailers,
   defaults,
   candidateId,
+  previousSaleId,
   checkedAtDefault,
 }: {
   mode: PeriodMode;
   retailers: AdminRetailerOption[];
   defaults: SaleFormDefaults | null;
   candidateId: string | null;
+  // Only used to keep the prefill when switching the period type; never
+  // submitted with the form.
+  previousSaleId: string | null;
   checkedAtDefault: string;
 }) {
   // An inactive retailer is not an option; the admin then chooses again.
@@ -174,7 +218,11 @@ function SaleForm({
         mode={mode}
         defaults={defaults}
         checkedAtDefault={checkedAtDefault}
-        modeHref={(value) => `/admin/new?mode=${value}${candidateId === null ? "" : `&candidateId=${candidateId}`}`}
+        modeHref={(value) =>
+          `/admin/new?mode=${value}${
+            candidateId !== null ? `&candidateId=${candidateId}` : previousSaleId !== null ? `&from=${previousSaleId}` : ""
+          }`
+        }
       />
       <SubmitButton className="rounded-xl bg-blue-500 px-4 py-2.5 text-[15px] font-semibold text-white">
         登録する
