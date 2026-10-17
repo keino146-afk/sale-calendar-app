@@ -121,6 +121,12 @@ describe("Home", () => {
     expect(listPublishedSaleEvents).toHaveBeenCalledTimes(1);
   });
 
+  it("ends with the public footer (disclaimer and operator)", async () => {
+    const html = await renderHome();
+
+    expect(html).toMatch(/<\/main><footer[^>]*>.*最新情報は各公式サイトをご確認ください。.*運営：セールカレンダー運営.*<\/footer>$/);
+  });
+
   it("does not swallow connection() failures", async () => {
     const interrupt = new Error("prerender interrupted");
     connection.mockRejectedValue(interrupt);
