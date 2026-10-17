@@ -82,6 +82,7 @@ describe("SaleDetailPage", () => {
     expect(html).not.toContain("11/11 02:00");
     expect(html).toContain("最大50%OFF");
     expect(html).toContain('href="/"');
+    expect(html).toMatch(/<\/main><footer[^>]*>.*運営：セールカレンダー運営.*<\/footer>$/);
   });
 
   it("links to the official source safely", async () => {
@@ -128,6 +129,7 @@ describe("SaleDetailPage", () => {
     const html = await renderDetail();
 
     expect(html).toContain("セール情報を読み込めませんでした");
+    expect(html).toMatch(/<\/main><footer[^>]*>.*運営：セールカレンダー運営.*<\/footer>$/);
     expect(html).not.toContain("sb_publishable_");
     expect(html).not.toContain("permission denied");
     expect(notFound).not.toHaveBeenCalled();

@@ -54,12 +54,33 @@ describe("admin security boundary", () => {
     expect(await filesMatching(APP_CODE, /createBrowserClient/)).toEqual([]);
   });
 
-  it("has exactly two Client Components: the admin home link and the admin submit button", async () => {
-    // Approved exceptions (Phase 6F add-on, Phase 6N). Any other "use client" fails.
+  it("has exactly three Client Components: the admin home link, the admin submit button and the error page", async () => {
+    // Approved exceptions (Phase 6F add-on, Phase 6N, Phase 6P). Any other "use client" fails.
     expect(await filesMatching(APP_CODE, /^\s*["']use client["']/m)).toEqual([
       "src/app/admin/_components/SubmitButton.tsx",
+      "src/app/error.tsx",
       "src/components/AdminHomeLink.tsx",
     ]);
+  });
+
+  it("keeps the error page generic: no error details, logging, server or env code", async () => {
+    const code = (await readFile("src/app/error.tsx", "utf8")).replace(/^\s*\/\/.*$/gm, "");
+    const imports = [...code.matchAll(/^import[^;]*from\s+["']([^"']+)["']/gm)].map(([, source]) => source);
+    expect(imports).toEqual(["next/link"]);
+    expect(code).not.toMatch(
+      /console\.|error\.(message|digest|stack)|\{error\}|supabase|@\/server|process\.env|NEXT_PUBLIC|localStorage|sessionStorage|document\.cookie|fetch\(/,
+    );
+  });
+
+  it("shows the public footer on public pages only, never in the admin area", async () => {
+    expect(await filesMatching(APP_CODE, /\bSiteFooter\b/)).toEqual([
+      "src/app/calendar/page.tsx",
+      "src/app/not-found.tsx",
+      "src/app/page.tsx",
+      "src/app/sales/[saleId]/page.tsx",
+      "src/components/SiteFooter.tsx",
+    ]);
+    expect(await readFile("src/app/layout.tsx", "utf8")).not.toContain("SiteFooter");
   });
 
   it("keeps the admin submit button to pending UI only, used by the approved mutation forms", async () => {

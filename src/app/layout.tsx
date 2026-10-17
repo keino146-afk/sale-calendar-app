@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
@@ -23,6 +23,13 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   openGraph: { type: "website", siteName: SITE_NAME, locale: "ja_JP", title: SITE_NAME, description: SITE_DESCRIPTION },
   twitter: { card: "summary", title: SITE_NAME, description: SITE_DESCRIPTION },
+};
+
+// Browser / installed-app theme colour: the red of the app icon (same value
+// as theme_color in app/manifest.ts). Only the browser chrome uses it; the
+// UI accent stays blue.
+export const viewport: Viewport = {
+  themeColor: "#E60418",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
