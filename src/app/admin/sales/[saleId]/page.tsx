@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import type { ReactNode } from "react";
 import { PastEndBadge } from "../../_components/PastEndBadge";
+import { SubmitButton } from "../../_components/SubmitButton";
 import { StatusBadge } from "../../_components/StatusBadge";
 import { archiveSaleAction, publishSaleAction, reopenSaleAction } from "./actions";
 import { requireAdmin } from "@/server/auth/admin-session";
@@ -189,9 +190,9 @@ function ActionButton({
   return (
     <form action={action}>
       <input type="hidden" name="saleId" value={saleId} />
-      <button type="submit" className={`w-full rounded-xl px-4 py-2.5 text-[15px] font-semibold ${toneClass}`}>
+      <SubmitButton className={`w-full rounded-xl px-4 py-2.5 text-[15px] font-semibold ${toneClass}`}>
         {label}
-      </button>
+      </SubmitButton>
     </form>
   );
 }

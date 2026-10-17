@@ -29,7 +29,14 @@ vi.mock("@/server/data/admin-collection-candidates", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/data/admin-collection-candidates")>();
   return { ...actual, getCollectionCandidate: mocks.getCollectionCandidate };
 });
-vi.mock("./actions", () => ({ createSaleCandidateAction: vi.fn() }));
+// Each mocked Server Action renders as a distinct form URL (React's
+// $$FORM_ACTION hook; name: null adds no hidden field), so a test can tell
+// which action a form is wired to.
+vi.mock("./actions", () => ({
+  createSaleCandidateAction: Object.assign(vi.fn(), {
+    $$FORM_ACTION: () => ({ action: "/__action/create", name: null }),
+  }),
+}));
 
 const { default: AdminNewSalePage } = await import("./page");
 
@@ -120,6 +127,8 @@ describe("AdminNewSalePage", () => {
     expect(html).toContain("セール情報を確認した公式ページを入力してください");
     expect(html).toContain('value="2026-10-11T09:30"');
     expect(html).toContain("登録する</button>");
+    expect(html).toMatch(/<form [^>]*action="\/__action\/create"/);
+    expect(html).toMatch(/<button type="submit" aria-busy="false" class="[^"]*">登録する<\/button>/);
   });
 
   it("never offers status or internal fields", async () => {
@@ -197,6 +206,9 @@ describe("AdminNewSalePage", () => {
       expect(html).toMatch(/name="sourceCheckedAt"[^>]*value="2026-10-02T12:00"/);
       // Mode links keep the candidate.
       expect(html).toContain(`href="/admin/new?mode=date&amp;candidateId=${CANDIDATE_ID}"`);
+      // An import posts through the same action and pending-aware button.
+      expect(html).toMatch(/<form [^>]*action="\/__action\/create"/);
+      expect(html).toMatch(/<button type="submit" aria-busy="false" class="[^"]*">登録する<\/button>/);
     });
 
     it("prefills date fields with the inclusive last day", async () => {

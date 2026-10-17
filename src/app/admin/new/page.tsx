@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { createSaleCandidateAction } from "./actions";
 import { Field, INPUT_CLASS, SaleContentFields } from "../_components/SaleContentFields";
+import { SubmitButton } from "../_components/SubmitButton";
 import { requireAdmin } from "@/server/auth/admin-session";
 import { listActiveRetailersForAdmin, type AdminRetailerOption } from "@/server/data/admin-sale-create";
 import {
@@ -175,9 +176,9 @@ function SaleForm({
         checkedAtDefault={checkedAtDefault}
         modeHref={(value) => `/admin/new?mode=${value}${candidateId === null ? "" : `&candidateId=${candidateId}`}`}
       />
-      <button type="submit" className="rounded-xl bg-blue-500 px-4 py-2.5 text-[15px] font-semibold text-white">
+      <SubmitButton className="rounded-xl bg-blue-500 px-4 py-2.5 text-[15px] font-semibold text-white">
         登録する
-      </button>
+      </SubmitButton>
     </form>
   );
 }

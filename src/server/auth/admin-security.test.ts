@@ -54,9 +54,43 @@ describe("admin security boundary", () => {
     expect(await filesMatching(APP_CODE, /createBrowserClient/)).toEqual([]);
   });
 
-  it("has exactly one Client Component: the admin home link", async () => {
-    // Approved exception (Phase 6F add-on). Any other "use client" fails.
-    expect(await filesMatching(APP_CODE, /^\s*["']use client["']/m)).toEqual(["src/components/AdminHomeLink.tsx"]);
+  it("has exactly two Client Components: the admin home link and the admin submit button", async () => {
+    // Approved exceptions (Phase 6F add-on, Phase 6N). Any other "use client" fails.
+    expect(await filesMatching(APP_CODE, /^\s*["']use client["']/m)).toEqual([
+      "src/app/admin/_components/SubmitButton.tsx",
+      "src/components/AdminHomeLink.tsx",
+    ]);
+  });
+
+  it("keeps the admin submit button to pending UI only, used by the approved mutation forms", async () => {
+    const code = await readFile("src/app/admin/_components/SubmitButton.tsx", "utf8");
+    const imports = [...code.matchAll(/^import[^;]*from\s+["']([^"']+)["']/gm)].map(([, source]) => source);
+    expect(imports.sort()).toEqual(["react", "react-dom"]);
+    expect(code).not.toMatch(
+      /supabase|@\/server|process\.env|NEXT_PUBLIC|localStorage|sessionStorage|document\.cookie|fetch\(|service_role/i,
+    );
+    expect(code).toContain('type="submit"');
+    expect(code).toContain("disabled={pending}");
+
+    // Only the four admin mutation forms use it (not login, logout or public pages).
+    expect(await filesMatching(APP_CODE, /\bSubmitButton\b/)).toEqual([
+      "src/app/admin/_components/SubmitButton.tsx",
+      "src/app/admin/new/page.tsx",
+      "src/app/admin/sales/[saleId]/edit/page.tsx",
+      "src/app/admin/sales/[saleId]/page.tsx",
+      "src/app/admin/sales/[saleId]/reject/page.tsx",
+    ]);
+    // Those forms no longer have a plain submit button of their own.
+    for (const page of [
+      "src/app/admin/new/page.tsx",
+      "src/app/admin/sales/[saleId]/edit/page.tsx",
+      "src/app/admin/sales/[saleId]/page.tsx",
+      "src/app/admin/sales/[saleId]/reject/page.tsx",
+    ]) {
+      const source = await readFile(page, "utf8");
+      expect(source).not.toMatch(/^\s*["']use client["']/m);
+      expect(source).not.toContain('type="submit"');
+    }
   });
 
   it("keeps the admin home link free of server, Supabase, env and storage code", async () => {
