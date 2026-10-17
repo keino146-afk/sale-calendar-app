@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-// The only Client Component (admin-security.test.ts pins this). It asks
+// One of the two Client Components (admin-security.test.ts pins both). It asks
 // /admin/presence, the one place that can see the Path=/admin session cookie,
 // whether the visitor is an admin, and shows a small "管理画面へ" link only on
 // an exact positive answer. Anything else (204, errors, redirects, odd

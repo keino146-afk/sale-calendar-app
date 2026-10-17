@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { updateSaleAction } from "./actions";
 import { Field, SaleContentFields } from "../../../_components/SaleContentFields";
 import { StatusBadge } from "../../../_components/StatusBadge";
+import { SubmitButton } from "../../../_components/SubmitButton";
 import { requireAdmin } from "@/server/auth/admin-session";
 import { getAdminSaleEventForEdit, type EditableSaleDto } from "@/server/data/admin-sale-edit";
 import { isEditableSaleStatus } from "@/lib/admin-sale-status";
@@ -124,9 +125,9 @@ export default async function AdminSaleEditPage({
             公開中の内容が変更されることを確認しました
           </label>
         ) : null}
-        <button type="submit" className="rounded-xl bg-blue-500 px-4 py-2.5 text-[15px] font-semibold text-white">
+        <SubmitButton className="rounded-xl bg-blue-500 px-4 py-2.5 text-[15px] font-semibold text-white">
           変更を保存
-        </button>
+        </SubmitButton>
         <Link
           href={detailHref}
           className="rounded-xl border border-black/10 bg-white px-4 py-2.5 text-center text-[15px] font-semibold"
