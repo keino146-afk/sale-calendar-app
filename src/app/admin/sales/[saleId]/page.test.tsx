@@ -31,11 +31,18 @@ vi.mock("@/server/data/admin-sale-events", () => ({
   getAdminSaleEvent: mocks.getAdminSaleEvent,
   getLatestRejectReason: mocks.getLatestRejectReason,
 }));
-vi.mock("./actions", () => ({
-  publishSaleAction: vi.fn(),
-  archiveSaleAction: vi.fn(),
-  reopenSaleAction: vi.fn(),
-}));
+// Each mocked Server Action renders as a distinct form URL (React's
+// $$FORM_ACTION hook; name: null adds no hidden field), so a test can tell
+// which action a form is wired to.
+vi.mock("./actions", () => {
+  const formAction = (name: string) =>
+    Object.assign(vi.fn(), { $$FORM_ACTION: () => ({ action: `/__action/${name}`, name: null }) });
+  return {
+    publishSaleAction: formAction("publish"),
+    archiveSaleAction: formAction("archive"),
+    reopenSaleAction: formAction("reopen"),
+  };
+});
 
 const { default: AdminSaleDetailPage } = await import("./page");
 
@@ -257,6 +264,23 @@ describe("AdminSaleDetailPage", () => {
     if (labels.length > 0 && labels[0] !== "却下する") {
       expect(html).toContain(`name="saleId" value="${SALE_ID}"`);
     }
+  });
+
+  it.each([
+    ["pending_review", "publish", "公開する"],
+    ["published", "archive", "終了する"],
+    ["rejected", "reopen", "確認待ちに戻す"],
+  ])("posts %s's action through its own form with a pending-aware submit button", async (status, action, label) => {
+    mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, status });
+    mocks.getLatestRejectReason.mockResolvedValue("理由");
+
+    const html = await render();
+    const forms = html.match(/<form[^>]*>.*?<\/form>/g) ?? [];
+
+    expect(forms).toHaveLength(1);
+    expect(forms[0]).toContain(`<form action="/__action/${action}">`);
+    expect(forms[0]).toContain(`name="saleId" value="${SALE_ID}"`);
+    expect(forms[0]).toMatch(new RegExp(`<button type="submit" aria-busy="false" class="[^"]*">${label}</button>`));
   });
 
   it("links reject to the confirmation page instead of posting directly", async () => {

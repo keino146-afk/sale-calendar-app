@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { rejectSaleAction } from "../actions";
+import { SubmitButton } from "../../../_components/SubmitButton";
 import { requireAdmin } from "@/server/auth/admin-session";
 import { getAdminSaleEvent, type AdminSaleEventDto } from "@/server/data/admin-sale-events";
 import { REJECT_REASON_MAX_LENGTH } from "@/lib/reject-reason";
@@ -80,12 +81,9 @@ export default async function AdminRejectSalePage({
             className="rounded-xl border border-black/10 px-3 py-2 text-base"
           />
         </label>
-        <button
-          type="submit"
-          className="rounded-xl bg-red-500 px-4 py-2.5 text-[15px] font-semibold text-white"
-        >
+        <SubmitButton className="rounded-xl bg-red-500 px-4 py-2.5 text-[15px] font-semibold text-white">
           却下を確定する
-        </button>
+        </SubmitButton>
         <Link href={backHref} className="text-center text-sm text-blue-600">
           戻る
         </Link>

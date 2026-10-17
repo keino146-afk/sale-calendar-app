@@ -27,7 +27,12 @@ vi.mock("next/server", () => ({ connection: mocks.connection }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound, redirect: mocks.redirect }));
 vi.mock("@/server/auth/admin-session", () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock("@/server/data/admin-sale-edit", () => ({ getAdminSaleEventForEdit: mocks.getAdminSaleEventForEdit }));
-vi.mock("./actions", () => ({ updateSaleAction: vi.fn() }));
+// Each mocked Server Action renders as a distinct form URL (React's
+// $$FORM_ACTION hook; name: null adds no hidden field), so a test can tell
+// which action a form is wired to.
+vi.mock("./actions", () => ({
+  updateSaleAction: Object.assign(vi.fn(), { $$FORM_ACTION: () => ({ action: "/__action/update", name: null }) }),
+}));
 
 const { default: AdminSaleEditPage } = await import("./page");
 
@@ -145,6 +150,9 @@ describe("AdminSaleEditPage", () => {
     expect(html).toContain(">変更を保存</button>");
     expect(html).toMatch(new RegExp(`href="/admin/sales/${SALE_ID}"[^>]*>変更せず戻る</a>`));
     expect(html.match(/<form/g)).toHaveLength(1);
+    // The update action, with the pending-aware submit button.
+    expect(html).toMatch(/<form [^>]*action="\/__action\/update"/);
+    expect(html).toMatch(/<button type="submit" aria-busy="false" class="[^"]*">変更を保存<\/button>/);
   });
 
   it("switches between date-only and timed entry on the edit page", async () => {

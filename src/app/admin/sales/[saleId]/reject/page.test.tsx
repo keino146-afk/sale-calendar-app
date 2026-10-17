@@ -27,7 +27,12 @@ vi.mock("next/server", () => ({ connection: mocks.connection }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound, redirect: mocks.redirect }));
 vi.mock("@/server/auth/admin-session", () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock("@/server/data/admin-sale-events", () => ({ getAdminSaleEvent: mocks.getAdminSaleEvent }));
-vi.mock("../actions", () => ({ rejectSaleAction: vi.fn() }));
+// Each mocked Server Action renders as a distinct form URL (React's
+// $$FORM_ACTION hook; name: null adds no hidden field), so a test can tell
+// which action a form is wired to.
+vi.mock("../actions", () => ({
+  rejectSaleAction: Object.assign(vi.fn(), { $$FORM_ACTION: () => ({ action: "/__action/reject", name: null }) }),
+}));
 
 const { default: AdminRejectSalePage } = await import("./page");
 
@@ -85,6 +90,8 @@ describe("AdminRejectSalePage", () => {
     expect(html).toContain('<textarea name="reason" required="" maxLength="2000"');
     expect(html).toContain(`name="saleId" value="${SALE_ID}"`);
     expect(html).toContain("却下を確定する</button>");
+    expect(html).toMatch(/<form [^>]*action="\/__action\/reject"/);
+    expect(html).toMatch(/<button type="submit" aria-busy="false" class="[^"]*">却下を確定する<\/button>/);
     expect(html).toContain(`href="/admin/sales/${SALE_ID}"`);
     expect(html).toContain("戻る");
     expect(html).not.toContain('role="alert"');
