@@ -169,6 +169,14 @@ export default async function AdminSaleDetailPage({
           編集する
         </Link>
       ) : null}
+      {/* Navigation only: opens the normal create form prefilled with this
+          sale's reusable content (any status). Nothing is written here. */}
+      <Link
+        href={`/admin/new?from=${sale.id}`}
+        className="w-full rounded-xl border border-blue-500 bg-white px-4 py-2.5 text-center text-[15px] font-semibold text-blue-600"
+      >
+        このセールを元に作成
+      </Link>
       <LifecycleActions sale={sale} />
     </Shell>
   );

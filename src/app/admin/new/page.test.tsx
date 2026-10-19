@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
     requireAdmin: vi.fn(),
     listActiveRetailersForAdmin: vi.fn(),
     getCollectionCandidate: vi.fn(),
+    getAdminSaleEvent: vi.fn(),
     redirect: vi.fn((url: string) => {
       throw new RedirectSentinel(url);
     }),
@@ -28,6 +29,10 @@ vi.mock("@/server/data/admin-sale-create", () => ({
 vi.mock("@/server/data/admin-collection-candidates", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/data/admin-collection-candidates")>();
   return { ...actual, getCollectionCandidate: mocks.getCollectionCandidate };
+});
+vi.mock("@/server/data/admin-sale-events", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/data/admin-sale-events")>();
+  return { ...actual, getAdminSaleEvent: mocks.getAdminSaleEvent };
 });
 // Each mocked Server Action renders as a distinct form URL (React's
 // $$FORM_ACTION hook; name: null adds no hidden field), so a test can tell
@@ -65,6 +70,7 @@ beforeEach(() => {
 
 afterEach(() => {
   mocks.getCollectionCandidate.mockReset();
+  mocks.getAdminSaleEvent.mockReset();
   vi.useRealTimers();
   vi.restoreAllMocks();
   for (const mock of [mocks.connection, mocks.requireAdmin, mocks.listActiveRetailersForAdmin]) mock.mockReset();
@@ -295,6 +301,189 @@ describe("AdminNewSalePage", () => {
     it("does not query candidates without a candidate id", async () => {
       await render();
       expect(mocks.getCollectionCandidate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("prefill from a previous sale (from=)", () => {
+    const SOURCE_ID = "77777777-7777-4777-8777-777777777777";
+    const SOURCE = {
+      id: SOURCE_ID,
+      title: "楽天スーパーSALE",
+      description: "最大半額",
+      startsAt: "2026-09-03T15:00:00+00:00",
+      endsAt: "2026-09-10T15:00:00+00:00",
+      isDateOnly: true,
+      status: "archived",
+      sourceUrl: "https://event.rakuten.co.jp/campaign/supersale/",
+      sourceCheckedAt: "2026-08-20T00:00:00+00:00",
+      publishedAt: "2026-08-21T00:00:00+00:00",
+      rejectedAt: null,
+      archivedAt: "2026-09-12T00:00:00+00:00",
+      updatedAt: "2026-09-12T00:00:00.123456+00:00",
+      retailer: { slug: "rakuten", name: "楽天市場" },
+    };
+    const NOTICE = "過去のセール情報を元に入力しています。開催期間は空欄です。公式ページで内容を確認し、新しい期間を入力してから登録してください。";
+    const UNAVAILABLE = "元のセールを読み込めませんでした";
+    const inputValue = (html: string, name: string) =>
+      html.match(new RegExp(`<(?:input|textarea)[^>]*name="${name}"[^>]*>`))?.[0].match(/value="([^"]*)"/)?.[1] ?? "";
+
+    it("reads the sale server-side and prefills only the reusable content, with an empty period", async () => {
+      mocks.getAdminSaleEvent.mockResolvedValue(SOURCE);
+
+      const html = await render({ from: SOURCE_ID });
+
+      expect(mocks.getAdminSaleEvent).toHaveBeenCalledWith(CLIENT, SOURCE_ID);
+      expect(html).toContain(NOTICE);
+      expect(html).toContain('data-prefilled-from-previous-sale="true"');
+      expect(html).toContain(`<option value="${RETAILERS[0].id}" selected="">楽天市場</option>`);
+      expect(inputValue(html, "title")).toBe("楽天スーパーSALE");
+      expect(html).toContain(">最大半額</textarea>");
+      expect(inputValue(html, "sourceUrl")).toBe("https://event.rakuten.co.jp/campaign/supersale/");
+      // Date-only source: the date form, both dates empty.
+      expect(html).toContain('name="mode" value="date"');
+      expect(inputValue(html, "startDate")).toBe("");
+      expect(inputValue(html, "endDate")).toBe("");
+      // Checked time is now (09:30 JST), as on a blank form.
+      expect(inputValue(html, "sourceCheckedAt")).toBe("2026-10-11T09:30");
+      expect(html).not.toContain(UNAVAILABLE);
+    });
+
+    it("prefills a timed sale in datetime mode with both times empty", async () => {
+      mocks.getAdminSaleEvent.mockResolvedValue({ ...SOURCE, isDateOnly: false });
+
+      const html = await render({ from: SOURCE_ID });
+
+      expect(html).toContain('name="mode" value="datetime"');
+      expect(inputValue(html, "startsAt")).toBe("");
+      expect(inputValue(html, "endsAt")).toBe("");
+    });
+
+    it("submits through the normal create form without the source id, status or version", async () => {
+      mocks.getAdminSaleEvent.mockResolvedValue(SOURCE);
+
+      const html = await render({ from: SOURCE_ID });
+      const form = html.match(/<form[^>]*>.*?<\/form>/)?.[0] ?? "";
+
+      expect(form).toMatch(/<form [^>]*action="\/__action\/create"/);
+      const hidden = [...form.matchAll(/<input type="hidden" name="([^"]+)"/g)].map(([, name]) => name);
+      expect(hidden).toEqual(["mode"]);
+      // The period-type links keep from= (navigation only, never submitted);
+      // nothing that is submitted carries the source.
+      const submitted = form.replace(/<a [^>]*>.*?<\/a>/g, "");
+      for (const leaked of [SOURCE_ID, "archived", SOURCE.updatedAt, "expectedUpdatedAt", 'name="from"', 'name="status"']) {
+        expect(submitted).not.toContain(leaked);
+      }
+    });
+
+    it("leaves the retailer unselected when it is no longer active", async () => {
+      mocks.getAdminSaleEvent.mockResolvedValue({ ...SOURCE, retailer: { slug: "qoo10", name: "Qoo10" } });
+
+      const html = await render({ from: SOURCE_ID });
+
+      expect(html).toContain('<option value="" disabled="" selected="">選んでください</option>');
+      expect(html).toContain(NOTICE);
+    });
+
+    it("keeps the previous sale when switching between date and datetime entry", async () => {
+      mocks.getAdminSaleEvent.mockResolvedValue(SOURCE);
+
+      const html = await render({ from: SOURCE_ID });
+
+      expect(html).toContain(`href="/admin/new?mode=date&amp;from=${SOURCE_ID}"`);
+      expect(html).toContain(`href="/admin/new?mode=datetime&amp;from=${SOURCE_ID}"`);
+    });
+
+    it("lets an explicit mode override the source's period type", async () => {
+      mocks.getAdminSaleEvent.mockResolvedValue(SOURCE);
+
+      const html = await render({ from: SOURCE_ID, mode: "datetime" });
+
+      expect(html).toContain('name="mode" value="datetime"');
+      expect(inputValue(html, "title")).toBe("楽天スーパーSALE");
+    });
+
+    it.each(["not-a-uuid", `${SOURCE_ID}x`, "../../etc/passwd"])(
+      "ignores a malformed from (%s) without querying: plain blank form",
+      async (from) => {
+        const html = await render({ from });
+
+        expect(mocks.getAdminSaleEvent).not.toHaveBeenCalled();
+        expect(html).not.toContain(NOTICE);
+        expect(html).not.toContain(UNAVAILABLE);
+        expect(html).not.toContain(from);
+        expect(inputValue(html, "title")).toBe("");
+      },
+    );
+
+    it("shows a fixed notice and a blank form for a missing sale", async () => {
+      mocks.getAdminSaleEvent.mockResolvedValue(null);
+
+      const html = await render({ from: SOURCE_ID });
+
+      expect(html).toContain(UNAVAILABLE);
+      expect(html).not.toContain(NOTICE);
+      expect(inputValue(html, "title")).toBe("");
+      expect(html).toContain('<option value="" disabled="" selected="">選んでください</option>');
+    });
+
+    it("shows the same fixed notice for a read failure, without the error detail", async () => {
+      mocks.getAdminSaleEvent.mockRejectedValue(new Error("PGRST000 secret_detail relation sale_events"));
+
+      const html = await render({ from: SOURCE_ID });
+
+      expect(html).toContain(UNAVAILABLE);
+      expect(html).not.toContain("secret_detail");
+      expect(html).not.toContain("PGRST000");
+      expect(inputValue(html, "title")).toBe("");
+      const logged = vi.mocked(console.error).mock.calls.flat().map(String).join(" ");
+      expect(logged).toContain("previous sale prefill failed: Error");
+      expect(logged).not.toContain("secret_detail");
+    });
+
+    it("gives a candidateId precedence: the previous sale is not read or merged", async () => {
+      mocks.getCollectionCandidate.mockResolvedValue({
+        id: "55555555-5555-4555-8555-555555555555",
+        title: "プライム感謝祭",
+        description: null,
+        startsAt: "2026-10-15T15:00:00Z",
+        endsAt: "2026-10-19T14:59:00Z",
+        isDateOnly: false,
+        reviewState: "new",
+        sourceChanged: false,
+        firstSeenAt: "2026-10-01T00:00:00Z",
+        lastSeenAt: "2026-10-02T00:00:00Z",
+        sourceUrl: "https://www.amazon.co.jp/primeday",
+        sourceCheckedAt: "2026-10-02T03:00:00Z",
+        evidenceExcerpt: "根拠",
+        parserVersion: "amazon-rss-1",
+        importedSaleEventId: null,
+        retailer: { id: RETAILERS[1].id, slug: "amazon", name: "Amazon" },
+      });
+
+      const html = await render({ candidateId: "55555555-5555-4555-8555-555555555555", from: SOURCE_ID });
+
+      expect(mocks.getAdminSaleEvent).not.toHaveBeenCalled();
+      expect(html).toContain('data-prefilled-from-candidate="true"');
+      expect(html).not.toContain(NOTICE);
+      expect(inputValue(html, "title")).toBe("プライム感謝祭");
+      expect(html).toContain(`href="/admin/new?mode=date&amp;candidateId=55555555-5555-4555-8555-555555555555"`);
+      expect(html).not.toContain(`from=${SOURCE_ID}`);
+    });
+
+    it("reads nothing and shows no notice without from", async () => {
+      const html = await render();
+
+      expect(mocks.getAdminSaleEvent).not.toHaveBeenCalled();
+      expect(html).not.toContain(NOTICE);
+      expect(html).not.toContain(UNAVAILABLE);
+      expect(html).toContain('href="/admin/new?mode=date"');
+    });
+
+    it("requires an admin before reading the previous sale", async () => {
+      mocks.requireAdmin.mockImplementation(() => mocks.redirect("/admin/login"));
+
+      await expect(AdminNewSalePage(props({ from: SOURCE_ID }))).rejects.toBeInstanceOf(mocks.REDIRECT);
+      expect(mocks.getAdminSaleEvent).not.toHaveBeenCalled();
     });
   });
 });
