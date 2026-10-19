@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   saleFormDefaultsFromPeriod,
+  saleFormDefaultsFromPreviousSale,
   toJstDateTimeLocal,
   isOnOfficialDomain,
   isValidTitle,
@@ -296,5 +297,75 @@ describe("parseSaleContentForm", () => {
       ok: false,
       error: "source_url",
     });
+  });
+});
+
+describe("saleFormDefaultsFromPreviousSale", () => {
+  const RETAILERS = [
+    { id: "11111111-1111-4111-8111-111111111111", slug: "rakuten" },
+    { id: "22222222-2222-4222-8222-222222222222", slug: "amazon" },
+  ];
+  const NOW = new Date("2026-10-18T01:05:00Z"); // 10:05 JST
+  // An admin sale as loaded for the detail page, including everything that
+  // must never be copied.
+  const SOURCE = {
+    id: "33333333-3333-4333-8333-333333333333",
+    title: "楽天スーパーSALE",
+    description: "最大半額",
+    startsAt: "2026-09-04T11:00:00+00:00",
+    endsAt: "2026-09-11T01:00:00+00:00",
+    isDateOnly: false,
+    status: "archived",
+    sourceUrl: "https://event.rakuten.co.jp/campaign/supersale/",
+    sourceCheckedAt: "2026-08-20T00:00:00+00:00",
+    publishedAt: "2026-08-21T00:00:00+00:00",
+    rejectedAt: null,
+    archivedAt: "2026-09-12T00:00:00+00:00",
+    updatedAt: "2026-09-12T00:00:00.123456+00:00",
+    expectedUpdatedAt: "2026-09-12T00:00:00.123456+00:00",
+    createdAt: "2026-08-20T00:00:00+00:00",
+    retailer: { slug: "rakuten", name: "楽天市場" },
+  };
+
+  it("copies the reusable content and maps the retailer slug to the active retailer id", () => {
+    const { defaults, mode } = saleFormDefaultsFromPreviousSale(SOURCE, RETAILERS, NOW);
+
+    expect(defaults.retailerId).toBe("11111111-1111-4111-8111-111111111111");
+    expect(defaults.title).toBe("楽天スーパーSALE");
+    expect(defaults.description).toBe("最大半額");
+    expect(defaults.sourceUrl).toBe("https://event.rakuten.co.jp/campaign/supersale/");
+    expect(mode).toBe("datetime");
+    expect(saleFormDefaultsFromPreviousSale({ ...SOURCE, isDateOnly: true }, RETAILERS, NOW).mode).toBe("date");
+    expect(saleFormDefaultsFromPreviousSale({ ...SOURCE, description: null }, RETAILERS, NOW).defaults.description).toBe("");
+  });
+
+  it("leaves the period empty and sets the checked time to now (JST), never the source's", () => {
+    const { defaults } = saleFormDefaultsFromPreviousSale(SOURCE, RETAILERS, NOW);
+
+    expect([defaults.startDate, defaults.endDate, defaults.startsAt, defaults.endsAt]).toEqual(["", "", "", ""]);
+    expect(defaults.sourceCheckedAt).toBe("2026-10-18T10:05");
+  });
+
+  it("leaves the retailer unselected when the source's retailer is no longer active", () => {
+    const { defaults } = saleFormDefaultsFromPreviousSale(
+      { ...SOURCE, retailer: { slug: "qoo10" } },
+      RETAILERS,
+      NOW,
+    );
+    expect(defaults.retailerId).toBe("");
+    expect(saleFormDefaultsFromPreviousSale(SOURCE, [], NOW).defaults.retailerId).toBe("");
+  });
+
+  it("outputs only the form fields: no id, status, timestamps or version", () => {
+    const result = saleFormDefaultsFromPreviousSale(SOURCE, RETAILERS, NOW);
+
+    expect(Object.keys(result).sort()).toEqual(["defaults", "mode"]);
+    expect(Object.keys(result.defaults).sort()).toEqual(
+      ["description", "endDate", "endsAt", "retailerId", "sourceCheckedAt", "sourceUrl", "startDate", "startsAt", "title"].sort(),
+    );
+    const serialized = JSON.stringify(result);
+    for (const leaked of [SOURCE.id, "archived", SOURCE.updatedAt, SOURCE.publishedAt, SOURCE.archivedAt, SOURCE.createdAt, "2026-09-04", "2026-08-20"]) {
+      expect(serialized).not.toContain(leaked);
+    }
   });
 });

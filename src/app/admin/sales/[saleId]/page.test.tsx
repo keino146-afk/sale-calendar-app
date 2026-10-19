@@ -213,7 +213,12 @@ describe("AdminSaleDetailPage", () => {
       expect(html).not.toContain(hidden);
     }
     expect(html).not.toMatch(/eyJ|access_token|refresh_token/);
-    for (const label of ["新規", "作成"]) expect(html).not.toContain(label);
+    // The only 作成 is the navigation link to the normal create form
+    // (Phase 6Q); no create form or control is rendered here.
+    expect(html.match(/作成/g)).toHaveLength(1);
+    expect(html).toContain(`href="/admin/new?from=${SALE_ID}">このセールを元に作成</a>`);
+    expect(html).not.toContain("新規");
+    expect(html).not.toMatch(/<form[^>]*action="[^"]*\/admin\/new/);
     // Editing happens on its own page: the only 編集 here is that link, and
     // no editable field is rendered on the detail page.
     expect(html.match(/編集/g)).toHaveLength(1);
@@ -242,6 +247,23 @@ describe("AdminSaleDetailPage", () => {
       expect(html).not.toContain("編集する");
     }
   });
+
+  it.each(["pending_review", "published", "rejected", "archived"])(
+    "offers このセールを元に作成 for a %s sale as a plain link to the prefilled create form",
+    async (status) => {
+      mocks.getAdminSaleEvent.mockResolvedValue({ ...SALE, status });
+      mocks.getLatestRejectReason.mockResolvedValue("理由");
+
+      const html = await render();
+
+      const link = `<a class="w-full rounded-xl border border-blue-500 bg-white px-4 py-2.5 text-center text-[15px] font-semibold text-blue-600" href="/admin/new?from=${SALE_ID}">このセールを元に作成</a>`;
+      expect(html).toContain(link);
+      // Outside every form and apart from the status actions: navigation only.
+      const forms = html.match(/<form[^>]*>.*?<\/form>/g) ?? [];
+      for (const form of forms) expect(form).not.toContain("このセールを元に作成");
+      expect(actionLabels(html)).not.toContain("このセールを元に作成");
+    },
+  );
 
   it("confirms a saved edit", async () => {
     mocks.getAdminSaleEvent.mockResolvedValue(SALE);
