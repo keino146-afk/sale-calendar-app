@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ShareActions } from "@/components/ShareActions";
 import { SiteFooter } from "@/components/SiteFooter";
 import { connection } from "next/server";
 import { getPublishedSaleEvent, type SaleEventDto } from "@/server/data/sale-events";
@@ -12,6 +13,7 @@ import {
   type SaleTimingState,
 } from "@/lib/sale-display";
 import { publicPageMetadata } from "@/lib/site";
+import { isProductionDeployment, productionSaleUrl } from "@/server/share-url";
 
 // Active uses the same red as the 開催中 badge in sale lists.
 const TIMING_TONES: Record<SaleTimingState, string> = {
@@ -27,7 +29,9 @@ type LoadResult = { ok: true; sale: SaleEventDto | null } | { ok: false };
 // would go stale in search results. Shares the page's query via cache().
 // Not found: nothing special here; the page calls notFound(), which returns
 // 404 with noindex. A load failure renders a 200 error page, so it is kept
-// out of the index.
+// out of the index. Sale ids exist only in their own deployment's database:
+// off Production (Preview, local) the page names no Production canonical
+// URL or og:url for this id, and is kept out of the index.
 export async function generateMetadata({ params }: PageProps<"/sales/[saleId]">): Promise<Metadata> {
   await connection();
   const { saleId } = await params;
@@ -40,11 +44,14 @@ export async function generateMetadata({ params }: PageProps<"/sales/[saleId]">)
   }
   if (sale === null) return {};
 
-  return publicPageMetadata({
+  const production = isProductionDeployment();
+  const metadata = publicPageMetadata({
     path: `/sales/${sale.id}`,
     title: `${sale.title}（${sale.retailer.name}）`,
     description: `${sale.retailer.name}「${sale.title}」の開催期間は${formatPublicSalePeriod(sale)}です。開催情報と公式ページへのリンクを確認できます。`,
+    canonical: production,
   });
+  return production ? metadata : { ...metadata, robots: { index: false } };
 }
 
 export default async function SaleDetailPage({ params }: PageProps<"/sales/[saleId]">) {
@@ -101,6 +108,8 @@ export default async function SaleDetailPage({ params }: PageProps<"/sales/[sale
           </div>
           <h1 className="text-2xl font-semibold">{sale.title}</h1>
           <p className="text-foreground/80">{formatPublicSalePeriod(sale)}</p>
+          {/* Only a Production sale URL, checked on the server; null off Production. */}
+          <ShareActions shareUrl={productionSaleUrl(sale.id)} title={`${sale.title}（${sale.retailer.name}）`} />
           {timing === "ended" ? (
             <p role="note" className="rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">
               このセールは終了しました

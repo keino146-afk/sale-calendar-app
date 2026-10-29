@@ -1,21 +1,36 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { connection, notFound, getPublishedSaleEvent, NOT_FOUND } = vi.hoisted(() => {
-  const NOT_FOUND = new Error("NEXT_HTTP_ERROR_FALLBACK;404");
-  return {
-    connection: vi.fn(),
-    notFound: vi.fn(() => {
-      throw NOT_FOUND;
-    }),
-    getPublishedSaleEvent: vi.fn(),
-    NOT_FOUND,
-  };
-});
+const { connection, notFound, getPublishedSaleEvent, NOT_FOUND, isProductionDeployment, productionSaleUrl } =
+  vi.hoisted(() => {
+    const NOT_FOUND = new Error("NEXT_HTTP_ERROR_FALLBACK;404");
+    return {
+      connection: vi.fn(),
+      notFound: vi.fn(() => {
+        throw NOT_FOUND;
+      }),
+      getPublishedSaleEvent: vi.fn(),
+      NOT_FOUND,
+      isProductionDeployment: vi.fn(),
+      productionSaleUrl: vi.fn(),
+    };
+  });
 
 vi.mock("next/server", () => ({ connection }));
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/server/data/sale-events", () => ({ getPublishedSaleEvent }));
+// The deployment check is tested in src/server/share-url.test.ts; here it is
+// switched between Production and not.
+vi.mock("@/server/share-url", () => ({ isProductionDeployment, productionSaleUrl }));
+// Stand-in that shows what the page passes (the real component renders no
+// button on the server).
+vi.mock("@/components/ShareActions", async () => {
+  const { createElement } = await import("react");
+  return {
+    ShareActions: ({ shareUrl, title }: { shareUrl: string | null; title: string }) =>
+      createElement("div", { "data-share-actions": shareUrl ?? "none", "data-share-title": title }),
+  };
+});
 
 const { default: SaleDetailPage, generateMetadata } = await import("./page");
 
@@ -42,7 +57,18 @@ async function renderDetail(saleId = SALE_ID) {
   return renderToStaticMarkup(await SaleDetailPage(props(saleId)));
 }
 
+const PRODUCTION_SALE_URL = `https://sale-calendar-app.vercel.app/sales/${SALE_ID}`;
+
+// Production by default; tests for other deployments switch it off.
+function setProduction(production: boolean) {
+  isProductionDeployment.mockReturnValue(production);
+  productionSaleUrl.mockImplementation((id: string) =>
+    production ? `https://sale-calendar-app.vercel.app/sales/${id}` : null,
+  );
+}
+
 beforeEach(() => {
+  setProduction(true);
   connection.mockResolvedValue(undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -52,6 +78,8 @@ afterEach(() => {
   connection.mockReset();
   getPublishedSaleEvent.mockReset();
   notFound.mockClear();
+  isProductionDeployment.mockReset();
+  productionSaleUrl.mockReset();
 });
 
 describe("SaleDetailPage", () => {
@@ -235,7 +263,10 @@ describe("SaleDetailPage metadata", () => {
       description: metadata.description,
       type: "website",
     });
-    expect(metadata.twitter).toMatchObject({ card: "summary", title: "スーパーSALE（楽天市場） | セールカレンダー" });
+    expect(metadata.twitter).toMatchObject({
+      card: "summary_large_image",
+      title: "スーパーSALE（楽天市場） | セールカレンダー",
+    });
     expect(metadata).not.toHaveProperty("robots");
   });
 
@@ -261,6 +292,35 @@ describe("SaleDetailPage metadata", () => {
     expect(metadata.title).toBe(`<script>alert("x")</script> & 'A' <b>（楽天市場）`);
   });
 
+  it("adds the shared image, never a sale-specific one", async () => {
+    getPublishedSaleEvent.mockResolvedValue(SALE);
+
+    const metadata = await generateMetadata(props());
+
+    expect(metadata.openGraph).toMatchObject({
+      images: [{ url: "/og/sale-calendar-og-v1.png", width: 1200, height: 630, type: "image/png" }],
+    });
+    expect(metadata.twitter).toMatchObject({ images: [{ url: "/og/sale-calendar-og-v1.png" }] });
+    expect(JSON.stringify([metadata.openGraph?.images, metadata.twitter?.images])).not.toMatch(
+      /スーパーSALE|楽天|cccccccc/,
+    );
+  });
+
+  it("off Production, names no Production canonical URL or og:url for the sale and stays out of the index", async () => {
+    setProduction(false);
+    getPublishedSaleEvent.mockResolvedValue(SALE);
+
+    const metadata = await generateMetadata(props());
+
+    expect(metadata).not.toHaveProperty("alternates");
+    expect(metadata.openGraph).not.toHaveProperty("url");
+    expect(JSON.stringify(metadata)).not.toContain(SALE_ID);
+    expect(metadata.robots).toEqual({ index: false });
+    // Title, description and the shared image are unchanged.
+    expect(metadata.title).toBe("スーパーSALE（楽天市場）");
+    expect(metadata.openGraph).toMatchObject({ images: [{ url: "/og/sale-calendar-og-v1.png" }] });
+  });
+
   it("adds nothing for a missing sale, leaving the page's 404 (with noindex) in charge", async () => {
     getPublishedSaleEvent.mockResolvedValue(null);
 
@@ -270,6 +330,64 @@ describe("SaleDetailPage metadata", () => {
   it("keeps a load failure page out of the index without leaking details", async () => {
     getPublishedSaleEvent.mockRejectedValue(new Error("sb_secret_FAKE_SHOULD_NOT_APPEAR"));
 
+    // No image, canonical URL or og:url either.
     expect(await generateMetadata(props())).toEqual({ robots: { index: false } });
+  });
+});
+
+describe("SaleDetailPage sharing", () => {
+  it("passes the Production sale URL for the loaded sale and its title on Production", async () => {
+    getPublishedSaleEvent.mockResolvedValue(SALE);
+
+    const html = await renderDetail();
+
+    expect(productionSaleUrl).toHaveBeenCalledWith(SALE_ID);
+    expect(html).toContain(`data-share-actions="${PRODUCTION_SALE_URL}"`);
+    expect(html).toContain('data-share-title="スーパーSALE（楽天市場）"');
+    // Near the title and period, before the official page link.
+    expect(html.indexOf("data-share-actions")).toBeGreaterThan(html.indexOf("11/4 20:00 〜 11/11 01:59"));
+    expect(html.indexOf("data-share-actions")).toBeLessThan(html.indexOf("公式ページを見る"));
+  });
+
+  it("passes no URL off Production, so no share or copy button can appear", async () => {
+    setProduction(false);
+    getPublishedSaleEvent.mockResolvedValue(SALE);
+
+    const html = await renderDetail();
+
+    expect(html).toContain('data-share-actions="none"');
+    expect(html).not.toContain(PRODUCTION_SALE_URL);
+  });
+
+  it.each([
+    ["upcoming", "2026-11-01T00:00:00Z"],
+    ["active", "2026-11-05T00:00:00Z"],
+    ["ended", "2026-12-01T00:00:00Z"],
+  ])("offers sharing for a published %s sale", async (_label, now) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    getPublishedSaleEvent.mockResolvedValue(SALE);
+    try {
+      expect(await renderDetail()).toContain(`data-share-actions="${PRODUCTION_SALE_URL}"`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers no sharing for a missing or unpublished sale (404)", async () => {
+    getPublishedSaleEvent.mockResolvedValue(null);
+
+    await expect(SaleDetailPage(props("not-a-uuid"))).rejects.toBe(NOT_FOUND);
+    expect(productionSaleUrl).not.toHaveBeenCalled();
+  });
+
+  it("offers no sharing when the sale cannot be loaded", async () => {
+    getPublishedSaleEvent.mockRejectedValue(new Error("load failed"));
+
+    const html = await renderDetail();
+
+    expect(html).toContain("セール情報を読み込めませんでした");
+    expect(html).not.toContain("data-share-actions");
+    expect(productionSaleUrl).not.toHaveBeenCalled();
   });
 });

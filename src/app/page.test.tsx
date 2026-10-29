@@ -364,11 +364,21 @@ describe("Home metadata", () => {
       url: "/",
       title: "セールカレンダー",
       description: "楽天市場・Amazon・Qoo10の大型セールの開催予定と開催中のセールをまとめて確認できるセールカレンダーです。",
+      images: [
+        {
+          url: "/og/sale-calendar-og-v1.png",
+          width: 1200,
+          height: 630,
+          alt: "セールカレンダー：お得なセールを見逃さない",
+          type: "image/png",
+        },
+      ],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: "セールカレンダー",
       description: "楽天市場・Amazon・Qoo10の大型セールの開催予定と開催中のセールをまとめて確認できるセールカレンダーです。",
+      images: [{ url: "/og/sale-calendar-og-v1.png", alt: "セールカレンダー：お得なセールを見逃さない" }],
     },
   };
 

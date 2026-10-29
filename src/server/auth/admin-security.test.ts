@@ -54,13 +54,28 @@ describe("admin security boundary", () => {
     expect(await filesMatching(APP_CODE, /createBrowserClient/)).toEqual([]);
   });
 
-  it("has exactly three Client Components: the admin home link, the admin submit button and the error page", async () => {
-    // Approved exceptions (Phase 6F add-on, Phase 6N, Phase 6P). Any other "use client" fails.
+  it("has exactly four Client Components: the admin home link, the admin submit button, the error page and the share actions", async () => {
+    // Approved exceptions (Phase 6F add-on, Phase 6N, Phase 6P, Web share
+    // page option B). Any other "use client" fails.
     expect(await filesMatching(APP_CODE, /^\s*["']use client["']/m)).toEqual([
       "src/app/admin/_components/SubmitButton.tsx",
       "src/app/error.tsx",
       "src/components/AdminHomeLink.tsx",
+      "src/components/ShareActions.tsx",
     ]);
+  });
+
+  it("keeps the share actions free of server, Supabase, env, storage, network and URL-building code", async () => {
+    const code = (await readFile("src/components/ShareActions.tsx", "utf8")).replace(/^\s*\/\/.*$/gm, "");
+    const imports = [...code.matchAll(/^import[^;]*from\s+["']([^"']+)["']/gm)].map(([, source]) => source);
+    expect(imports).toEqual(["react"]);
+    expect(code).not.toMatch(
+      /supabase|@\/server|process\.env|NEXT_PUBLIC|localStorage|sessionStorage|indexedDB|document\.cookie|fetch\(|XMLHttpRequest|sendBeacon|window\.open|location\.|new URL|https?:\/\/|service_role/i,
+    );
+    // The browser APIs it may use: the share sheet and writing to the clipboard.
+    expect(code).toContain("nav.share(");
+    expect(code).toContain("nav.clipboard.writeText(");
+    expect(code).not.toMatch(/clipboard\.(read|readText)\b/);
   });
 
   it("keeps the error page generic: no error details, logging, server or env code", async () => {

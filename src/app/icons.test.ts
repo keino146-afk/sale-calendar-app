@@ -21,6 +21,15 @@ describe("app icons", () => {
     expect(await pngSize(path)).toEqual({ width: size, height: size });
   });
 
+  it("serves the approved shared Open Graph image unchanged: a 1200x630 PNG", async () => {
+    const path = "public/og/sale-calendar-og-v1.png";
+    expect(await pngSize(path)).toEqual({ width: 1200, height: 630 });
+    const { createHash } = await import("node:crypto");
+    expect(createHash("sha256").update(await readFile(path)).digest("hex")).toBe(
+      "7020d1a3f2ce9971d1de7c2de832dfd017902397928bb3d2c46d7ee4710c4be4",
+    );
+  });
+
   it("replaces the create-next-app favicon with a 48px icon", async () => {
     const data = await readFile("src/app/favicon.ico");
     // ICONDIR: reserved 0, type 1 (icon), one image of 48x48.
@@ -31,10 +40,11 @@ describe("app icons", () => {
     expect(data.length).not.toBe(25931);
   });
 
-  it("keeps only the generated icons in public/ and no source artwork", async () => {
-    expect((await readdir("public")).sort()).toEqual(["icons"]);
+  it("keeps only the generated icons and the approved Open Graph image in public/, and no source artwork", async () => {
+    expect((await readdir("public")).sort()).toEqual(["icons", "og"]);
     expect((await readdir("public/icons")).sort()).toEqual(["icon-192.png", "icon-512.png", "icon-maskable-512.png"]);
-    for (const dir of ["src/app", "public", "public/icons"]) {
+    expect((await readdir("public/og")).sort()).toEqual(["sale-calendar-og-v1.png"]);
+    for (const dir of ["src/app", "public", "public/icons", "public/og"]) {
       expect((await readdir(dir)).filter((name) => /icon-source|ChatGPT/i.test(name))).toEqual([]);
     }
   });

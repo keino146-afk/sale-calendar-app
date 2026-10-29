@@ -485,8 +485,22 @@ describe("Calendar metadata", () => {
       url: "/calendar",
       title: "カレンダー | セールカレンダー",
       description: DESCRIPTION,
+      images: [
+        {
+          url: "/og/sale-calendar-og-v1.png",
+          width: 1200,
+          height: 630,
+          alt: "セールカレンダー：お得なセールを見逃さない",
+          type: "image/png",
+        },
+      ],
     },
-    twitter: { card: "summary", title: "カレンダー | セールカレンダー", description: DESCRIPTION },
+    twitter: {
+      card: "summary_large_image",
+      title: "カレンダー | セールカレンダー",
+      description: DESCRIPTION,
+      images: [{ url: "/og/sale-calendar-og-v1.png", alt: "セールカレンダー：お得なセールを見逃さない" }],
+    },
   };
 
   it("keeps the Phase 6H metadata and stays indexable when data loads, also with zero sales", async () => {
