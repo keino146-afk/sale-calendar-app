@@ -69,7 +69,8 @@ const loadHomeData = cache(async (requestedRetailer: string | undefined): Promis
 // The root default title (no template on the home page). The canonical URL
 // ignores ?retailer=, so every filtered view points at "/". When the main
 // read failed, the page shows an error (HTTP 200) and is kept out of the
-// index; links on it may still be followed.
+// index; links on it may still be followed. It then has no shared image
+// either (and a plain summary card), like the sale page's error.
 export async function generateMetadata({ searchParams }: PageProps<"/">): Promise<Metadata> {
   // Before any read, so `next build` never reads Supabase.
   await connection();
@@ -77,7 +78,13 @@ export async function generateMetadata({ searchParams }: PageProps<"/">): Promis
   const data = await loadHomeData(normalizeRetailerParam(retailer));
 
   const metadata = publicPageMetadata({ path: "/", description: SITE_DESCRIPTION });
-  return data.ok ? metadata : { ...metadata, robots: { index: false } };
+  if (data.ok) return metadata;
+  return {
+    ...metadata,
+    openGraph: { ...metadata.openGraph, images: undefined },
+    twitter: { ...metadata.twitter, card: "summary", images: undefined },
+    robots: { index: false },
+  };
 }
 
 function toListItem(sale: SaleEventDto, now: Date): SaleListItem {
