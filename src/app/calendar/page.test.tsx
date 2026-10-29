@@ -485,8 +485,22 @@ describe("Calendar metadata", () => {
       url: "/calendar",
       title: "カレンダー | セールカレンダー",
       description: DESCRIPTION,
+      images: [
+        {
+          url: "/og/sale-calendar-og-v1.png",
+          width: 1200,
+          height: 630,
+          alt: "セールカレンダー：お得なセールを見逃さない",
+          type: "image/png",
+        },
+      ],
     },
-    twitter: { card: "summary", title: "カレンダー | セールカレンダー", description: DESCRIPTION },
+    twitter: {
+      card: "summary_large_image",
+      title: "カレンダー | セールカレンダー",
+      description: DESCRIPTION,
+      images: [{ url: "/og/sale-calendar-og-v1.png", alt: "セールカレンダー：お得なセールを見逃さない" }],
+    },
   };
 
   it("keeps the Phase 6H metadata and stays indexable when data loads, also with zero sales", async () => {
@@ -515,13 +529,23 @@ describe("Calendar metadata", () => {
   it.each([
     ["the retailer read", () => listActiveRetailers.mockRejectedValue(new Error("sb_secret_FAKE retailers"))],
     ["the sale read", () => listPublishedSaleEvents.mockRejectedValue(new Error("sb_secret_FAKE sales"))],
-  ])("adds noindex (without nofollow) when %s fails, keeping canonical and OG", async (_label, fail) => {
+  ])("adds noindex (without nofollow) when %s fails, keeping canonical and OG text without the shared image", async (_label, fail) => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     fail();
 
     const metadata = await calendarMetadata({ year: "2026", month: "11" });
 
-    expect(metadata).toEqual({ ...EXPECTED, robots: { index: false } });
+    // Same canonical, title and description; no shared image on the error page.
+    expect(metadata).toEqual({
+      ...EXPECTED,
+      openGraph: { ...EXPECTED.openGraph, images: undefined },
+      twitter: { ...EXPECTED.twitter, card: "summary", images: undefined },
+      robots: { index: false },
+    });
+    expect(metadata.openGraph?.images).toBeUndefined();
+    expect(metadata.twitter?.images).toBeUndefined();
+    expect(metadata.twitter).toMatchObject({ card: "summary" });
+    expect(JSON.stringify(metadata)).not.toContain("/og/");
     expect(metadata.robots).not.toHaveProperty("follow");
     const logged = errorSpy.mock.calls.flat().map(String).join(" ");
     expect(logged).toContain("[calendar] sale load failed: Error");

@@ -74,7 +74,8 @@ const loadCalendarData = cache(
 
 // One canonical URL for every month and day view (?year=&month=&day=). When
 // the read failed, the page shows an error (HTTP 200) and is kept out of the
-// index; links on it may still be followed.
+// index; links on it may still be followed. It then has no shared image
+// either (and a plain summary card), like the sale page's error.
 export async function generateMetadata({ searchParams }: PageProps<"/calendar">): Promise<Metadata> {
   // Before any read, so `next build` never reads Supabase.
   await connection();
@@ -86,7 +87,13 @@ export async function generateMetadata({ searchParams }: PageProps<"/calendar">)
     title: "カレンダー",
     description: "楽天市場・Amazon・Qoo10の大型セールの予定を月ごとのカレンダーで確認できます。",
   });
-  return data.ok ? metadata : { ...metadata, robots: { index: false } };
+  if (data.ok) return metadata;
+  return {
+    ...metadata,
+    openGraph: { ...metadata.openGraph, images: undefined },
+    twitter: { ...metadata.twitter, card: "summary", images: undefined },
+    robots: { index: false },
+  };
 }
 
 export default async function CalendarPage({ searchParams }: PageProps<"/calendar">) {

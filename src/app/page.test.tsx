@@ -364,11 +364,21 @@ describe("Home metadata", () => {
       url: "/",
       title: "セールカレンダー",
       description: "楽天市場・Amazon・Qoo10の大型セールの開催予定と開催中のセールをまとめて確認できるセールカレンダーです。",
+      images: [
+        {
+          url: "/og/sale-calendar-og-v1.png",
+          width: 1200,
+          height: 630,
+          alt: "セールカレンダー：お得なセールを見逃さない",
+          type: "image/png",
+        },
+      ],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: "セールカレンダー",
       description: "楽天市場・Amazon・Qoo10の大型セールの開催予定と開催中のセールをまとめて確認できるセールカレンダーです。",
+      images: [{ url: "/og/sale-calendar-og-v1.png", alt: "セールカレンダー：お得なセールを見逃さない" }],
     },
   };
 
@@ -408,13 +418,23 @@ describe("Home metadata", () => {
   it.each([
     ["the retailer read", () => listActiveRetailers.mockRejectedValue(new Error("sb_secret_FAKE retailers"))],
     ["the sale read", () => listPublishedSaleEvents.mockRejectedValue(new Error("sb_secret_FAKE sales"))],
-  ])("adds noindex (without nofollow) when %s fails, keeping canonical and OG", async (_label, fail) => {
+  ])("adds noindex (without nofollow) when %s fails, keeping canonical and OG text without the shared image", async (_label, fail) => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     fail();
 
     const metadata = await homeMetadata();
 
-    expect(metadata).toEqual({ ...EXPECTED, robots: { index: false } });
+    // Same canonical, title and description; no shared image on the error page.
+    expect(metadata).toEqual({
+      ...EXPECTED,
+      openGraph: { ...EXPECTED.openGraph, images: undefined },
+      twitter: { ...EXPECTED.twitter, card: "summary", images: undefined },
+      robots: { index: false },
+    });
+    expect(metadata.openGraph?.images).toBeUndefined();
+    expect(metadata.twitter?.images).toBeUndefined();
+    expect(metadata.twitter).toMatchObject({ card: "summary" });
+    expect(JSON.stringify(metadata)).not.toContain("/og/");
     expect(metadata.robots).not.toHaveProperty("follow");
     const logged = errorSpy.mock.calls.flat().map(String).join(" ");
     expect(logged).toContain("[home] sale load failed: Error");
