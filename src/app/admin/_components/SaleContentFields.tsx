@@ -13,6 +13,12 @@ import {
 
 export const INPUT_CLASS = "rounded-xl border border-black/10 px-3 py-2 text-base";
 
+// The timed end is stored as entered, as the exclusive end of the sale, and
+// public pages show the minute before it. This tells the admin what to enter
+// for an official "until 1:59" (the 1:59 minute still part of the sale).
+export const END_DATETIME_HELP =
+  "入力した時刻はセールの開催期間に含まれません。例：公式案内が「11/15 1:59まで」の場合は「11/15 2:00」を入力してください。";
+
 export function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
@@ -92,7 +98,7 @@ export function SaleContentFields({
           <Field label="開始日時（日本時間）">
             <input type="datetime-local" name="startsAt" required defaultValue={defaults?.startsAt} className={INPUT_CLASS} />
           </Field>
-          <Field label="終了日時（日本時間・この時刻に終了）">
+          <Field label="終了日時（日本時間）" help={END_DATETIME_HELP}>
             <input type="datetime-local" name="endsAt" required defaultValue={defaults?.endsAt} className={INPUT_CLASS} />
           </Field>
         </>
