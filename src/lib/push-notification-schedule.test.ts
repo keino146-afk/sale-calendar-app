@@ -62,27 +62,33 @@ function groups(notifications: ScheduledPushNotification[], now: string, exclude
 }
 
 describe("schedulePushNotifications", () => {
-  it("computes all 7 due times from the first publish, the start and the exclusive end", () => {
-    expect(iso(schedule(SALE))).toEqual([
-      ["new-sale", "2026-11-01T01:00:00.000000Z", "2026-11-02T01:00:00.000000Z"],
-      ["three-days-before-start", "2026-11-06T15:00:00.000000Z", "2026-11-06T16:00:00.000000Z"],
-      ["one-day-before-start", "2026-11-08T15:00:00.000000Z", "2026-11-08T16:00:00.000000Z"],
-      ["at-start", "2026-11-09T15:00:00.000000Z", "2026-11-09T15:15:00.000000Z"],
-      ["one-day-before-end", "2026-11-10T15:00:00.000000Z", "2026-11-10T16:00:00.000000Z"],
-      ["three-hours-before-end", "2026-11-11T12:00:00.000000Z", "2026-11-11T12:15:00.000000Z"],
-      ["one-hour-before-end", "2026-11-11T14:00:00.000000Z", "2026-11-11T14:05:00.000000Z"],
+  it("defines exactly the 5 approved kinds, in order", () => {
+    expect(PUSH_NOTIFICATION_KINDS).toEqual([
+      "new-sale",
+      "one-day-before-start",
+      "at-start",
+      "one-day-before-end",
+      "two-hours-before-end",
     ]);
   });
 
-  it("uses the approved grace periods: 24h, 1h, 1h, 15m, 1h, 15m, 5m", () => {
+  it("computes all 5 due times from the first publish, the start and the exclusive end", () => {
+    expect(iso(schedule(SALE))).toEqual([
+      ["new-sale", "2026-11-01T01:00:00.000000Z", "2026-11-02T01:00:00.000000Z"],
+      ["one-day-before-start", "2026-11-08T15:00:00.000000Z", "2026-11-08T16:00:00.000000Z"],
+      ["at-start", "2026-11-09T15:00:00.000000Z", "2026-11-09T15:15:00.000000Z"],
+      ["one-day-before-end", "2026-11-10T15:00:00.000000Z", "2026-11-10T16:00:00.000000Z"],
+      ["two-hours-before-end", "2026-11-11T13:00:00.000000Z", "2026-11-11T13:15:00.000000Z"],
+    ]);
+  });
+
+  it("uses the approved grace periods: 24h, 1h, 15m, 1h, 15m", () => {
     expect(PUSH_NOTIFICATION_KINDS.map((kind) => PUSH_NOTIFICATION_GRACE_US[kind])).toEqual([
       24 * HOUR_US,
       HOUR_US,
-      HOUR_US,
       15 * MINUTE_US,
       HOUR_US,
       15 * MINUTE_US,
-      5 * MINUTE_US,
     ]);
     // SALE ends more than 24 hours after its publish, so no deadline is cut off.
     for (const notification of schedule(SALE)) {
@@ -101,31 +107,18 @@ describe("schedulePushNotifications", () => {
   });
 
   it("leaves out kinds due before the first publish, never sending them retroactively", () => {
-    // Published 11/8 12:00 JST: 3 days before the start (11/7 00:00 JST) has passed.
-    const late = schedule({ ...SALE, publishedAt: "2026-11-08T12:00:00+09:00" });
-    expect(late.map((n) => n.kind)).toEqual([
-      "new-sale",
-      "one-day-before-start",
-      "at-start",
-      "one-day-before-end",
-      "three-hours-before-end",
-      "one-hour-before-end",
-    ]);
+    // Published 11/9 12:00 JST: 1 day before the start (11/9 00:00 JST) has passed.
+    const late = schedule({ ...SALE, publishedAt: "2026-11-09T12:00:00+09:00" });
+    expect(late.map((n) => n.kind)).toEqual(["new-sale", "at-start", "one-day-before-end", "two-hours-before-end"]);
 
     // Published after the start: only the new-sale and end notifications.
     const afterStart = schedule({ ...SALE, publishedAt: "2026-11-10T09:00:00+09:00" });
-    expect(afterStart.map((n) => n.kind)).toEqual([
-      "new-sale",
-      "one-day-before-end",
-      "three-hours-before-end",
-      "one-hour-before-end",
-    ]);
+    expect(afterStart.map((n) => n.kind)).toEqual(["new-sale", "one-day-before-end", "two-hours-before-end"]);
   });
 
   it("keeps a kind due at the very instant of the first publish", () => {
     const kinds = schedule({ ...SALE, publishedAt: "2026-11-09T00:00:00+09:00" }).map((n) => n.kind);
-    expect(kinds).toContain("one-day-before-start");
-    expect(kinds).not.toContain("three-days-before-start");
+    expect(kinds).toEqual([...PUSH_NOTIFICATION_KINDS]);
   });
 
   it("compares a due time with the first publish to the microsecond", () => {
@@ -145,64 +138,61 @@ describe("schedulePushNotifications", () => {
     };
 
     it("leaves out 1 day before the end when it falls before the start, keeps the later ones", () => {
-      expect(iso(schedule(SIX_HOURS)).slice(3)).toEqual([
+      expect(iso(schedule(SIX_HOURS)).slice(2)).toEqual([
         ["at-start", "2026-11-10T03:00:00.000000Z", "2026-11-10T03:15:00.000000Z"],
-        ["three-hours-before-end", "2026-11-10T06:00:00.000000Z", "2026-11-10T06:15:00.000000Z"],
-        ["one-hour-before-end", "2026-11-10T08:00:00.000000Z", "2026-11-10T08:05:00.000000Z"],
+        ["two-hours-before-end", "2026-11-10T07:00:00.000000Z", "2026-11-10T07:15:00.000000Z"],
       ]);
     });
 
-    it("leaves out 3 hours before the end when it falls before the start", () => {
-      const kinds = schedule({ ...SIX_HOURS, endsAt: "2026-11-10T14:00:00+09:00" }).map((n) => n.kind);
-      expect(kinds).toEqual(["new-sale", "three-days-before-start", "one-day-before-start", "at-start", "one-hour-before-end"]);
-    });
-
-    it("leaves out 1 hour before the end when it falls before the start, keeping every other kind", () => {
-      const kinds = schedule({ ...SIX_HOURS, endsAt: "2026-11-10T12:30:00+09:00" }).map((n) => n.kind);
-      expect(kinds).toEqual(["new-sale", "three-days-before-start", "one-day-before-start", "at-start"]);
+    it("leaves out 2 hours before the end when it falls before the start, keeping every other kind", () => {
+      // A 90-minute sale: 2 hours before the end is 30 minutes before the start.
+      const kinds = schedule({ ...SIX_HOURS, endsAt: "2026-11-10T13:30:00+09:00" }).map((n) => n.kind);
+      expect(kinds).toEqual(["new-sale", "one-day-before-start", "at-start"]);
     });
 
     it("leaves out an end notice 1 µs before the start", () => {
-      // 3 hours before 14:59:59.999999 is 1 µs before the 12:00 start.
-      const kinds = schedule({ ...SIX_HOURS, endsAt: "2026-11-10T14:59:59.999999+09:00" }).map((n) => n.kind);
-      expect(kinds).not.toContain("three-hours-before-end");
+      // 2 hours before 13:59:59.999999 is 1 µs before the 12:00 start.
+      const kinds = schedule({ ...SIX_HOURS, endsAt: "2026-11-10T13:59:59.999999+09:00" }).map((n) => n.kind);
+      expect(kinds).not.toContain("two-hours-before-end");
     });
 
     it("keeps an end notice due exactly at the start, grouped with at-start under the earliest deadline", () => {
+      // A 2-hour sale: 2 hours before the end is the start.
       const start = "2026-11-10T03:00:00.000000Z";
-      const threeHours = schedule({ ...SIX_HOURS, endsAt: "2026-11-10T15:00:00+09:00" });
-      expect(threeHours.map((n) => n.kind)).toContain("three-hours-before-end");
-      expect(groups(threeHours, start)).toEqual([
+      const twoHours = schedule({ ...SIX_HOURS, endsAt: "2026-11-10T14:00:00+09:00" });
+      expect(twoHours.map((n) => n.kind)).toEqual(["new-sale", "one-day-before-start", "at-start", "two-hours-before-end"]);
+      expect(groups(twoHours, start)).toEqual([
         {
           saleId: SALE.id,
           dueAt: start,
           deadlineAt: "2026-11-10T03:15:00.000000Z",
-          kinds: ["at-start", "three-hours-before-end"],
+          kinds: ["at-start", "two-hours-before-end"],
         },
       ]);
-
-      const oneHour = schedule({ ...SIX_HOURS, endsAt: "2026-11-10T13:00:00+09:00" });
-      expect(oneHour.map((n) => n.kind)).toEqual([
-        "new-sale",
-        "three-days-before-start",
-        "one-day-before-start",
-        "at-start",
-        "one-hour-before-end",
-      ]);
-      expect(groups(oneHour, start)).toEqual([
-        { saleId: SALE.id, dueAt: start, deadlineAt: "2026-11-10T03:05:00.000000Z", kinds: ["at-start", "one-hour-before-end"] },
-      ]);
-      // 5 minutes after the start the 5-minute notice has expired; at-start is still sendable alone.
-      expect(groups(oneHour, "2026-11-10T03:05:00Z")).toEqual([
-        { saleId: SALE.id, dueAt: start, deadlineAt: "2026-11-10T03:15:00.000000Z", kinds: ["at-start"] },
-      ]);
+      // Both have 15 minutes: from then on neither is sendable.
+      expect(groups(twoHours, "2026-11-10T03:15:00Z")).toEqual([]);
     });
 
-    it("keeps the grace periods and deadline boundaries of the end notices that remain", () => {
-      const threeHours = find(schedule(SIX_HOURS), "three-hours-before-end");
-      expect(getPushNotificationTiming(threeHours, us("2026-11-10T05:59:59.999999Z"))).toBe("before-due");
-      expect(getPushNotificationTiming(threeHours, us("2026-11-10T06:14:59.999999Z"))).toBe("sendable");
-      expect(getPushNotificationTiming(threeHours, us("2026-11-10T06:15:00Z"))).toBe("expired");
+    it("keeps the 15-minute grace and deadline boundaries of 2 hours before the end", () => {
+      const twoHours = find(schedule(SIX_HOURS), "two-hours-before-end");
+      expect(getPushNotificationTiming(twoHours, us("2026-11-10T06:59:59.999999Z"))).toBe("before-due");
+      expect(getPushNotificationTiming(twoHours, us("2026-11-10T07:00:00Z"))).toBe("sendable");
+      expect(getPushNotificationTiming(twoHours, us("2026-11-10T07:14:59.999999Z"))).toBe("sendable");
+      expect(getPushNotificationTiming(twoHours, us("2026-11-10T07:15:00Z"))).toBe("expired");
+      expect(getPushNotificationTiming(twoHours, us("2026-11-10T07:15:00.000001Z"))).toBe("expired");
+    });
+
+    it("counts 2 hours before the end from the stored exclusive end, to the microsecond and across a year", () => {
+      // Official "until 11/15 1:59" is stored as 11/15 02:00 (PR #59): due 11/15 00:00 JST.
+      const pr59 = find(schedule({ ...SALE, endsAt: "2026-11-15T02:00:00+09:00" }), "two-hours-before-end");
+      expect(formatInstantMicros(pr59.dueAtUs)).toBe("2026-11-14T15:00:00.000000Z");
+      // An end with a fraction keeps it.
+      const fraction = find(schedule({ ...SALE, endsAt: "2026-11-15T02:00:00.000001+09:00" }), "two-hours-before-end");
+      expect(formatInstantMicros(fraction.dueAtUs)).toBe("2026-11-14T15:00:00.000001Z");
+      // An end at 1/1 01:00 JST: due 12/31 23:00 JST of the previous year.
+      const newYear = find(schedule({ ...SALE, endsAt: "2027-01-01T01:00:00+09:00" }), "two-hours-before-end");
+      expect(formatInstantMicros(newYear.dueAtUs)).toBe("2026-12-31T14:00:00.000000Z");
+      expect(formatInstantMicros(newYear.deadlineAtUs)).toBe("2026-12-31T14:15:00.000000Z");
     });
 
     it("does not change its input", () => {
@@ -253,8 +243,7 @@ describe("schedulePushNotifications", () => {
       expect(iso(running)).toEqual([
         ["new-sale", "2026-10-31T03:00:00.000000Z", "2026-11-01T03:00:00.000000Z"],
         ["one-day-before-end", "2026-10-31T03:00:00.000000Z", "2026-10-31T04:00:00.000000Z"],
-        ["three-hours-before-end", "2026-11-01T00:00:00.000000Z", "2026-11-01T00:15:00.000000Z"],
-        ["one-hour-before-end", "2026-11-01T02:00:00.000000Z", "2026-11-01T02:05:00.000000Z"],
+        ["two-hours-before-end", "2026-11-01T01:00:00.000000Z", "2026-11-01T01:15:00.000000Z"],
       ]);
       // 1 day before the end falls at the publish instant: one group, earliest deadline.
       expect(groups(running, "2026-10-31T03:00:00Z")).toEqual([
@@ -394,10 +383,8 @@ describe("schedulePushNotifications", () => {
 
     it("leaves the kinds before the start untouched in a 5-minute sale", () => {
       const fiveMinutes = schedule({ ...SALE, startsAt: "2026-11-10T12:00:00+09:00", endsAt: "2026-11-10T12:05:00+09:00" });
-      for (const kind of ["three-days-before-start", "one-day-before-start"]) {
-        const notification = find(fiveMinutes, kind);
-        expect(notification.deadlineAtUs - notification.dueAtUs).toBe(HOUR_US);
-      }
+      const dayBefore = find(fiveMinutes, "one-day-before-start");
+      expect(dayBefore.deadlineAtUs - dayBefore.dueAtUs).toBe(HOUR_US);
       // Published 11/1, well before the end: new-sale keeps its 24 hours.
       const newSale = find(fiveMinutes, "new-sale");
       expect(newSale.deadlineAtUs - newSale.dueAtUs).toBe(24 * HOUR_US);
