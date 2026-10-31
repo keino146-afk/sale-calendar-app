@@ -22,12 +22,10 @@ import { DAY_MS } from "./jst";
 
 export const PUSH_NOTIFICATION_KINDS = [
   "new-sale",
-  "three-days-before-start",
   "one-day-before-start",
   "at-start",
   "one-day-before-end",
-  "three-hours-before-end",
-  "one-hour-before-end",
+  "two-hours-before-end",
 ] as const;
 
 export type PushNotificationKind = (typeof PUSH_NOTIFICATION_KINDS)[number];
@@ -42,12 +40,10 @@ const DAY_US = DAY_MS * MS_US;
 // schedulePushNotifications).
 export const PUSH_NOTIFICATION_GRACE_US: Record<PushNotificationKind, number> = {
   "new-sale": 24 * HOUR_US,
-  "three-days-before-start": HOUR_US,
   "one-day-before-start": HOUR_US,
   "at-start": 15 * MINUTE_US,
   "one-day-before-end": HOUR_US,
-  "three-hours-before-end": 15 * MINUTE_US,
-  "one-hour-before-end": 5 * MINUTE_US,
+  "two-hours-before-end": 15 * MINUTE_US,
 };
 
 export type PushScheduleSale = {
@@ -132,20 +128,14 @@ export function formatInstantMicros(us: number): string {
 function dueTimes(publishedUs: number, startUs: number, endUs: number): Record<PushNotificationKind, number> {
   return {
     "new-sale": publishedUs,
-    "three-days-before-start": startUs - 3 * DAY_US,
     "one-day-before-start": startUs - DAY_US,
     "at-start": startUs,
     "one-day-before-end": endUs - DAY_US,
-    "three-hours-before-end": endUs - 3 * HOUR_US,
-    "one-hour-before-end": endUs - HOUR_US,
+    "two-hours-before-end": endUs - 2 * HOUR_US,
   };
 }
 
-const END_KINDS: ReadonlySet<PushNotificationKind> = new Set([
-  "one-day-before-end",
-  "three-hours-before-end",
-  "one-hour-before-end",
-]);
+const END_KINDS: ReadonlySet<PushNotificationKind> = new Set(["one-day-before-end", "two-hours-before-end"]);
 
 // Kinds never sent from the end of the sale on: their deadline is the earlier
 // of the grace period and the exclusive endsAt.
