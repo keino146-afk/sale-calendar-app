@@ -24,7 +24,7 @@ select ok((select bool_and(not prosecdef and proconfig @> array['search_path=""'
 -- Only functions naming the tables in their source; indirect access (through
 -- another function or dynamic SQL) is not detected here. The RPC tests check
 -- which functions clients can execute.
-select is((select coalesce(array_agg(s.sig order by s.sig collate "C"), '{}') from (select n.nspname || '.' || p.proname || '(' || pg_catalog.oidvectortypes(p.proargtypes) || ')' as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace where strpos(p.prosrc, 'push_device_registrations') > 0 or strpos(p.prosrc, 'push_registration_requests') > 0) s), array['public.confirm_push_registration(text, text, text)', 'public.create_push_registration_request(text, text, text)'], 'only the approved registration RPCs name the registration tables in their source');
+select is((select coalesce(array_agg(s.sig order by s.sig collate "C"), '{}') from (select n.nspname || '.' || p.proname || '(' || pg_catalog.oidvectortypes(p.proargtypes) || ')' as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace where strpos(p.prosrc, 'push_device_registrations') > 0 or strpos(p.prosrc, 'push_registration_requests') > 0) s), array['public.confirm_push_registration(text, text, text)', 'public.confirm_push_token_change(text, text, text, text)', 'public.create_push_registration_request(text, text, text)', 'public.create_push_token_change_request(text, text, text, text, text)', 'public.disable_push_registration(text, text)', 'public.renew_push_registration(text, text, text, text, boolean, boolean)'], 'only the approved registration RPCs name the registration tables in their source');
 
 select is(
   (select string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' order by ordinal_position)
@@ -53,7 +53,7 @@ insert into private.push_device_registrations
   (id, status, push_token, push_token_hash, secret_hash, confirmed_token_generation, send_paused, notifications_enabled, expires_at)
 values
   ('30000000-0000-4000-8000-000000000001', 'active', 'test-token-a', '\xa1', '\xb1', 1, false, true, now() + interval '2160 hours'),
-  ('30000000-0000-4000-8000-000000000002', 'active', 'test-token-b', '\xa2', '\xb2', 1, false, true, now() + interval '2160 hours');
+  ('30000000-0000-4000-8000-000000000002', 'active', 'test-token-b', '\xa2', '\xb2', 1, true, true, now() + interval '2160 hours');
 
 -- ============================================================
 -- push_device_registrations: columns and states
@@ -200,7 +200,7 @@ select throws_ok(
 -- ============================================================
 
 select lives_ok(
-  $$update private.push_device_registrations set confirmed_token_generation = 2
+  $$update private.push_device_registrations set confirmed_token_generation = 2, send_paused = false
     where id = '30000000-0000-4000-8000-000000000002'$$,
   'token generation may go up by one'
 );
