@@ -21,7 +21,10 @@ select is((select count(*)::int from pg_policies where schemaname = 'private' an
 select ok(not (select bool_or(has_table_privilege(r, t, p)) from unnest(array['public','anon','authenticated','service_role']) r, unnest(array['private.push_device_registrations','private.push_registration_requests']) t, unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p), 'no table privilege for public, anon, authenticated or service_role');
 select ok(not (select bool_or(has_function_privilege(r, f, 'execute')) from unnest(array['public','anon','authenticated','service_role']) r, unnest(array['private.enforce_push_device_registration_transition()','private.enforce_push_registration_request_transition()']) f), 'transition guards are not executable by client roles');
 select ok((select bool_and(not prosecdef and proconfig @> array['search_path=""']) from pg_proc where oid in ('private.enforce_push_device_registration_transition()'::regprocedure, 'private.enforce_push_registration_request_transition()'::regprocedure)), 'transition guards are SECURITY INVOKER with empty search_path');
-select is((select count(*)::int from pg_proc where strpos(prosrc, 'push_device_registrations') > 0 or strpos(prosrc, 'push_registration_requests') > 0), 0, 'no function reads or writes the registration tables (no RPC in U1-A)');
+-- Only functions naming the tables in their source; indirect access (through
+-- another function or dynamic SQL) is not detected here. The RPC tests check
+-- which functions clients can execute.
+select is((select coalesce(array_agg(s.sig order by s.sig collate "C"), '{}') from (select n.nspname || '.' || p.proname || '(' || pg_catalog.oidvectortypes(p.proargtypes) || ')' as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace where strpos(p.prosrc, 'push_device_registrations') > 0 or strpos(p.prosrc, 'push_registration_requests') > 0) s), array['public.confirm_push_registration(text, text, text)', 'public.create_push_registration_request(text, text, text)'], 'only the approved registration RPCs name the registration tables in their source');
 
 select is(
   (select string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' order by ordinal_position)
