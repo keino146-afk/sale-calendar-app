@@ -30,8 +30,8 @@ select is(
    from (select n.nspname || '.' || p.proname || '(' || pg_catalog.oidvectortypes(p.proargtypes) || ')' as sig
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
          where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'execute')) s),
-  array['public.confirm_push_registration(text, text, text)'],
-  'the only public function anon can execute is confirm_push_registration'
+  array['public.confirm_push_registration(text, text, text)', 'public.confirm_push_token_change(text, text, text, text)', 'public.disable_push_registration(text, text)', 'public.renew_push_registration(text, text, text, text, boolean, boolean)'],
+  'the only public functions anon can execute are the registration confirmations, renewal and disabling'
 );
 select ok(has_function_privilege('authenticated', 'public.current_user_is_admin()', 'execute') and has_function_privilege('authenticated', 'public.update_sale_event(uuid, timestamptz, boolean, text, text, timestamptz, timestamptz, boolean, text, timestamptz)', 'execute') and not has_function_privilege('anon', 'public.update_sale_event(uuid, timestamptz, boolean, text, text, timestamptz, timestamptz, boolean, text, timestamptz)', 'execute'), 'existing RPC grants are unchanged');
 select is(pg_catalog.pg_get_function_result('public.create_push_registration_request(text, text, text)'::regprocedure), 'TABLE(ok boolean, result text, request_id uuid)', 'create_push_registration_request returns (ok, result, request_id)');
