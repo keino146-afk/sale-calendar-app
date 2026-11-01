@@ -10,7 +10,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(76);
+select plan(89);
 
 -- ============================================================
 -- Structure, grants and intake (state right after the migration)
@@ -23,6 +23,8 @@ select ok((select bool_and(not prosecdef and proconfig @> array['search_path=""'
 select ok(has_function_privilege('service_role', 'public.create_push_registration_request(text, text, text)', 'execute') and not (select bool_or(has_function_privilege(r, 'public.create_push_registration_request(text, text, text)', 'execute')) from unnest(array['public','anon','authenticated']) r), 'create_push_registration_request: service_role only');
 select ok(has_function_privilege('anon', 'public.confirm_push_registration(text, text, text)', 'execute') and not (select bool_or(has_function_privilege(r, 'public.confirm_push_registration(text, text, text)', 'execute')) from unnest(array['public','authenticated','service_role']) r), 'confirm_push_registration: anon only');
 select ok(not (select bool_or(has_function_privilege(r, f, 'execute')) from unnest(array['public','anon','authenticated','service_role']) r, unnest(array['private.push_registration_intake_open()','private.push_registration_hash(text)']) f), 'helpers are not executable by client roles');
+select ok((select provolatile = 'v' and not prosecdef and proconfig @> array['search_path=""'] and btrim(prosrc) = 'select pg_catalog.clock_timestamp()' from pg_proc where oid = 'private.push_registration_current_time()'::regprocedure), 'the time helper returns clock_timestamp(), volatile, SECURITY INVOKER, empty search_path');
+select ok(not (select bool_or(has_function_privilege(r, 'private.push_registration_current_time()', 'execute')) from unnest(array['public','anon','authenticated','service_role']) r), 'the time helper is not executable by client roles');
 select is(
   (select coalesce(array_agg(s.sig order by s.sig collate "C"), '{}')
    from (select n.nspname || '.' || p.proname || '(' || pg_catalog.oidvectortypes(p.proargtypes) || ')' as sig
@@ -55,6 +57,11 @@ select is((select state || ':' || failed_attempts::text from private.push_regist
 -- Open intake for the rest of this transaction only (rolled back).
 create or replace function private.push_registration_intake_open()
 returns boolean language sql stable set search_path = '' as $$ select true $$;
+
+-- Fix the RPCs' time to now() (the transaction start) so expectations below
+-- are exact; the time-boundary tests move it. Rolled back with the rest.
+create or replace function private.push_registration_current_time()
+returns timestamptz language sql volatile set search_path = '' as $$ select pg_catalog.now() $$;
 
 -- ============================================================
 -- create_push_registration_request: input
@@ -275,6 +282,96 @@ select throws_ok(
 );
 
 reset role;
+
+-- ============================================================
+-- Time taken after the locks
+-- ============================================================
+
+-- The RPC's time is past the request's expiry once the request row is held.
+insert into private.push_registration_requests
+  (id, purpose, push_token, push_token_hash, request_secret_hash, nonce_hash, state, expires_at)
+values
+  ('42000000-0000-4000-8000-000000000071', 'new', 'test-token-q7', private.push_registration_hash('test-token-q7'),
+   private.push_registration_hash(repeat('E', 43)), private.push_registration_hash(repeat('F', 43)), 'pending', now() + interval '10 minutes');
+
+create or replace function private.push_registration_current_time()
+returns timestamptz language sql volatile set search_path = '' as $$ select pg_catalog.now() + interval '11 minutes' $$;
+
+select is((select ok from public.confirm_push_registration('42000000-0000-4000-8000-000000000071', repeat('E', 43), repeat('F', 43))), false, 'a request past its expiry at the time taken after the request lock is refused');
+select ok((select state = 'expired' and closed_at = now() + interval '11 minutes'
+             and push_token is null and request_secret_hash is null and nonce_hash is null
+           from private.push_registration_requests where id = '42000000-0000-4000-8000-000000000071'),
+          'it is closed as expired at that time, without its secrets');
+
+-- Valid when the request row is held, expired by the time the registration
+-- rows are held (first call: now(), later calls: 11 minutes on).
+create temp sequence u1b_time_calls;
+create or replace function private.push_registration_current_time()
+returns timestamptz language sql volatile set search_path = '' as $$
+  select case when pg_catalog.nextval('pg_temp.u1b_time_calls') = 1
+              then pg_catalog.now() else pg_catalog.now() + interval '11 minutes' end
+$$;
+
+insert into private.push_device_registrations
+  (id, status, push_token, push_token_hash, secret_hash, confirmed_token_generation, send_paused, notifications_enabled, expires_at)
+values
+  ('43000000-0000-4000-8000-000000000081', 'active', 'test-token-q8', private.push_registration_hash('test-token-q8'),
+   '\xb8', 1, false, true, now() + interval '30 days');
+insert into private.push_registration_requests
+  (id, purpose, push_token, push_token_hash, request_secret_hash, nonce_hash, state, expires_at)
+values
+  ('42000000-0000-4000-8000-000000000081', 'new', 'test-token-q8', private.push_registration_hash('test-token-q8'),
+   private.push_registration_hash(repeat('E', 43)), private.push_registration_hash(repeat('F', 43)), 'pending', now() + interval '10 minutes');
+
+select is((select ok from public.confirm_push_registration('42000000-0000-4000-8000-000000000081', repeat('E', 43), repeat('F', 43))), false, 'a request that expires before the registration rows are held is refused');
+select ok((select status = 'active' and push_token = 'test-token-q8' and secret_hash = '\xb8' and disabled_at is null
+           from private.push_device_registrations where id = '43000000-0000-4000-8000-000000000081'),
+          'the older registration for the token is not disabled');
+select is((select count(*)::int from private.push_device_registrations where push_token_hash = private.push_registration_hash('test-token-q8')), 1, 'no registration is created');
+select ok((select state = 'expired' and closed_at = now() + interval '11 minutes'
+             and push_token is null and request_secret_hash is null and nonce_hash is null
+           from private.push_registration_requests where id = '42000000-0000-4000-8000-000000000081'),
+          'the request is closed as expired at the later time, without its secrets');
+
+-- Limits count back from the time taken after the locks.
+insert into private.push_registration_requests (purpose, push_token_hash, state, created_at, expires_at, closed_at)
+select 'new', private.push_registration_hash('test-token-t1'), 'cancelled', now() - interval '30 minutes', now() - interval '20 minutes', now() - interval '25 minutes'
+from generate_series(1, 3);
+
+create or replace function private.push_registration_current_time()
+returns timestamptz language sql volatile set search_path = '' as $$ select pg_catalog.now() $$;
+
+select is((select result from public.create_push_registration_request('test-token-t1', repeat('A', 43), repeat('B', 43))), 'rate_limited', 'three requests in the last hour limit the token');
+
+create or replace function private.push_registration_current_time()
+returns timestamptz language sql volatile set search_path = '' as $$ select pg_catalog.now() + interval '31 minutes' $$;
+
+select is((select result from public.create_push_registration_request('test-token-t1', repeat('A', 43), repeat('B', 43))), 'created', 'an hour after those requests, at the time taken after the locks, the token may request again');
+select is((select expires_at from private.push_registration_requests where push_token_hash = private.push_registration_hash('test-token-t1') and state = 'pending'), now() + interval '41 minutes', 'the new request expires 10 minutes after that time');
+select ok((select created_at = now() + interval '31 minutes' and expires_at = created_at + interval '10 minutes'
+           from private.push_registration_requests where push_token_hash = private.push_registration_hash('test-token-t1') and state = 'pending'),
+          'the new request is recorded as created at that time, the time the limits were checked');
+
+-- A confirmation records the new registration at its final time.
+insert into private.push_registration_requests
+  (id, purpose, push_token, push_token_hash, request_secret_hash, nonce_hash, state, expires_at)
+values
+  ('42000000-0000-4000-8000-000000000091', 'new', 'test-token-q9', private.push_registration_hash('test-token-q9'),
+   private.push_registration_hash(repeat('E', 43)), private.push_registration_hash(repeat('F', 43)), 'pending', now() + interval '10 minutes');
+
+create or replace function private.push_registration_current_time()
+returns timestamptz language sql volatile set search_path = '' as $$ select pg_catalog.now() + interval '5 minutes' $$;
+
+create temp table u1b_time_confirmed on commit drop as
+select * from public.confirm_push_registration('42000000-0000-4000-8000-000000000091', repeat('E', 43), repeat('F', 43));
+
+select ok((select c.ok and d.created_at = now() + interval '5 minutes' and d.updated_at = d.created_at
+             and d.expires_at = d.created_at + interval '2160 hours' and c.expires_at = d.expires_at
+           from u1b_time_confirmed c join private.push_device_registrations d on d.id = c.registration_id),
+          'the new registration is created, updated and expiring from the confirmation time');
+
+create or replace function private.push_registration_current_time()
+returns timestamptz language sql volatile set search_path = '' as $$ select pg_catalog.now() $$;
 
 -- ============================================================
 -- create_push_registration_request: overall limits
