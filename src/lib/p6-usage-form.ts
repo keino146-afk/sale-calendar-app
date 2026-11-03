@@ -57,7 +57,7 @@ export const P6_FORM_FIELDS: readonly string[] = [
     `${metric.code}.value`,
     `${metric.code}.unit`,
     `${metric.code}.quota`,
-    `${metric.code}.unavailable`,
+    `${metric.code}.status`,
   ]),
 ];
 
@@ -88,7 +88,13 @@ export type P6UsageCheckDraft = {
   values: P6ValueEntry[];
 };
 
-export type P6FormError = "checked_at" | "period" | "spend_cap" | "data_as_of" | "value";
+// Per metric, the admin must say which it was: the dashboard showed a
+// number ("measured", 0 included), or it did not ("unavailable": no number,
+// a load failure, or only "No data"). Nothing is chosen in advance.
+export const P6_VALUE_STATUSES = ["measured", "unavailable"] as const;
+export type P6ValueStatus = (typeof P6_VALUE_STATUSES)[number];
+
+export type P6FormError = "checked_at" | "period" | "spend_cap" | "data_as_of" | "status" | "status_value" | "value";
 
 export type P6ParseResult = { ok: true; value: P6UsageCheckDraft } | { ok: false; error: P6FormError };
 
@@ -130,10 +136,20 @@ export function parseP6UsageForm(raw: P6RawForm): P6ParseResult {
     if (dataAsOf === null) return { ok: false, error: "data_as_of" };
   }
 
+  // Every metric needs an explicit choice; checked before any number so a
+  // missing choice is never read as a value (or as 0).
+  if (P6_METRICS.some((metric) => !(P6_VALUE_STATUSES as readonly string[]).includes(raw[`${metric.code}.status`] ?? ""))) {
+    return { ok: false, error: "status" };
+  }
+
   const values: P6ValueEntry[] = [];
   for (const metric of P6_METRICS) {
-    // "取得できなかった" is an explicit choice; an empty field is not.
-    if (raw[`${metric.code}.unavailable`] === "on") {
+    if (raw[`${metric.code}.status`] === "unavailable") {
+      // "取得できなかった" with a number typed in is contradictory: refused
+      // rather than guessing which one the admin meant.
+      if ((raw[`${metric.code}.value`] ?? "").trim() !== "" || (raw[`${metric.code}.quota`] ?? "").trim() !== "") {
+        return { ok: false, error: "status_value" };
+      }
       values.push({ metric: metric.code, status: "unavailable" });
       continue;
     }
@@ -171,7 +187,8 @@ export const P6_INVALID_REASON_LABELS: Record<string, string> = {
   period_mismatch: "前回の請求期間とつながっていません",
   usage_decreased: "前回より減ってはいけない値が減っています",
   data_as_of_future: "データの対象時刻が確認時刻より後です",
-  data_stale: "データの対象時刻が古すぎます",
+  data_stale: "データの対象時刻が請求期間より前か、前回の確認より前です",
+  data_too_old: "データの対象時刻が古すぎます（公式画面の確認時刻より24時間以上前）",
 };
 
 // Why a target is stopped (codes from the database).

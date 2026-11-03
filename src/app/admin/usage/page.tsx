@@ -51,7 +51,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   period: "請求期間の開始日と終了日を正しく入力してください",
   spend_cap: "Spend Cap の状態を選んでください",
   data_as_of: "データの対象時刻を正しく入力するか、空欄にしてください",
-  value: "すべての項目に使用量と上限を入力してください。読めなかった項目は「取得できなかった」にチェックしてください",
+  value: "「数値を確認できた」を選んだ項目には、使用量と上限を正しく入力してください",
+  status: "すべての項目で「数値を確認できた」か「取得できなかった」を選んでください",
+  status_value: "「取得できなかった」を選んだ項目には、使用量と上限を入力しないでください（空欄にしてください）",
   confirm_required: "確認のチェックを入れてから操作してください",
   stale: "画面を開いた後に記録が変わりました。最新の内容を確認してから、もう一度操作してください",
   duplicate: "同じ確認時刻の記録がすでにあります",
@@ -159,7 +161,7 @@ export default async function AdminUsagePage({ searchParams }: PageProps<"/admin
       )}
 
       {preview !== null && draft !== null ? (
-        <ConfirmSection preview={preview} draft={draft} />
+        <ConfirmSection preview={preview} draft={draft} newPeriod={firstCheckOfPeriod(status, draft.periodStart)} />
       ) : (
         <InputForm draft={draft} now={now} />
       )}
@@ -377,16 +379,44 @@ function MetricFields({ metric, draft }: { metric: P6MetricDefinition; draft: P6
           className={INPUT_CLASS}
         />
       </label>
-      <label className="flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          name={`${metric.code}.unavailable`}
-          value="on"
-          defaultChecked={draft?.[`${metric.code}.unavailable`] === "on"}
-        />
-        取得できなかった（0%とは扱わず、監視障害になります）
-      </label>
+      <div role="radiogroup" aria-label={`${metric.label}：公式画面で数値を確認できたか`} className="flex flex-col gap-1 text-xs">
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name={`${metric.code}.status`}
+            value="measured"
+            required
+            defaultChecked={draft?.[`${metric.code}.status`] === "measured"}
+          />
+          数値を確認できた（0 と表示されていれば 0 を入力）
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name={`${metric.code}.status`}
+            value="unavailable"
+            defaultChecked={draft?.[`${metric.code}.status`] === "unavailable"}
+          />
+          取得できなかった（使用量と上限は空欄。0%とは扱わず、監視障害になります）
+        </label>
+      </div>
     </fieldset>
+  );
+}
+
+// How to choose between a normal 0 and "取得できなかった".
+function ValueStatusGuide() {
+  return (
+    <div data-value-status-guide="true" className="flex flex-col gap-1 rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-800">
+      <p className="font-semibold">項目ごとに、どちらかを必ず選んでください</p>
+      <p>数値を確認できた：公式画面に数値が表示されている。0 と表示されていれば、正常な 0 として入力します。</p>
+      <p>取得できなかった：数値が表示されない、読み込みに失敗した、No data しか確認できない。</p>
+      <p>
+        例：Storage Size で「Average in period: 0.00 GB」と、グラフの「No data in period」が並んでいる場合、グラフの No data だけで
+        集計欄の 0.00 GB が誤りとは言えません。ただし 0.00 GB は、元のデータが新しいことの保証ではありません。
+      </p>
+      <p className="font-semibold">判断できないときは「取得できなかった」を選んでください（安全側です）。</p>
+    </div>
   );
 }
 
@@ -428,9 +458,13 @@ function InputForm({ draft, now }: { draft: P6RawForm | null; now: Date }) {
             ))}
           </select>
         </Field>
-        <Field label="データの対象時刻（日本時間・画面に表示がある場合だけ）">
+        <Field
+          label="データの対象時刻（日本時間・画面に表示がある場合だけ）"
+          help="公式画面に対象時刻が表示されている場合だけ入力します。表示されていない場合は空欄にし、推測で入力しないでください。確認時刻より24時間以上前の時刻は、古すぎるため無効な確認になります。"
+        >
           <input type="datetime-local" name="dataAsOf" defaultValue={draft?.dataAsOf} className={INPUT_CLASS} />
         </Field>
+        <ValueStatusGuide />
         <h3 className="text-sm font-bold">組織全体の使用量（Organization）</h3>
         {organization.map((metric) => (
           <MetricFields key={metric.code} metric={metric} draft={draft} />
@@ -447,9 +481,55 @@ function InputForm({ draft, now }: { draft: P6RawForm | null; now: Date }) {
   );
 }
 
-function ConfirmSection({ preview, draft }: { preview: P6Preview; draft: P6RawForm }) {
+// "first" when the newest valid (not voided) check on record is for another
+// billing period; "unknown" when there is none, or the history could not be
+// loaded (then the notice is shown too, without guessing the period).
+function firstCheckOfPeriod(status: P6Status | null, periodStart: string | undefined): "first" | "unknown" | null {
+  if (status === null) return "unknown";
+  const latestValid = status.checks
+    .filter((check) => check.isValid && check.voidedAt === null)
+    .sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt))[0];
+  if (latestValid === undefined) return "unknown";
+  return latestValid.periodStart === periodStart ? null : "first";
+}
+
+function ConfirmSection({
+  preview,
+  draft,
+  newPeriod,
+}: {
+  preview: P6Preview;
+  draft: P6RawForm;
+  newPeriod: "first" | "unknown" | null;
+}) {
+  const zeroMetrics = preview.values.filter(
+    (value) => value.status === "measured" && value.usage !== null && Number(value.usage) === 0,
+  );
   return (
     <Card id="confirm" title="入力内容の確認（まだ保存されていません）">
+      {zeroMetrics.length > 0 ? (
+        <div data-zero-notice="true" className="flex flex-col gap-1 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p>
+            次の項目は 0 として保存されます：
+            {zeroMetrics.map((value) => METRIC_BY_CODE.get(value.metric)?.label ?? value.metric).join("、")}
+          </p>
+          <p className="text-xs">
+            公式画面に数値の 0 が表示されていた場合だけ、そのまま保存してください。No data しか確認できなかった・読み込めなかった場合は、入力に戻って「取得できなかった」を選んでください。
+          </p>
+        </div>
+      ) : null}
+      {newPeriod !== null ? (
+        <div data-new-period-notice={newPeriod} className="flex flex-col gap-1 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p>
+            {newPeriod === "first"
+              ? "この請求期間で最初の確認です。"
+              : "前回の有効な確認がない（または読み込めない）ため、新しい請求期間の最初の確認として注意してください。"}
+          </p>
+          <p className="text-xs">
+            請求期間が切り替わった直後は、公式画面の数値がまだ反映されていないことがあります。No data や表示されない項目は「取得できなかった」を選んでください。
+          </p>
+        </div>
+      ) : null}
       {preview.valid ? (
         <p data-preview-valid="true" className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           有効な確認として記録されます。

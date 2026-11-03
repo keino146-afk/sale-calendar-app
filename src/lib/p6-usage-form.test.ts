@@ -45,6 +45,7 @@ function validForm(overrides: P6RawForm = {}): P6RawForm {
     "disk_size_production.value": "2",
     "disk_size_production.unit": "GB",
     "disk_size_production.quota": "8",
+    ...Object.fromEntries(P6_METRICS.map((metric) => [`${metric.code}.status`, "measured"])),
     ...overrides,
   };
 }
@@ -155,13 +156,64 @@ describe("parseP6UsageForm", () => {
 
   it("records an explicitly unavailable metric as unavailable, never as 0", () => {
     const result = parseP6UsageForm(
-      validForm({ "storage_size.unavailable": "on", "storage_size.value": "", "storage_size.quota": "" }),
+      validForm({ "storage_size.status": "unavailable", "storage_size.value": "", "storage_size.quota": "" }),
     );
     expect(result.ok && result.value.values[4]).toEqual({ metric: "storage_size", status: "unavailable" });
   });
 
-  it("refuses an empty value that is not marked unavailable", () => {
+  it("accepts every metric unavailable (each is still stored as unavailable, not 0)", () => {
+    const result = parseP6UsageForm(
+      validForm(
+        Object.fromEntries(
+          P6_METRICS.flatMap((metric) => [
+            [`${metric.code}.status`, "unavailable"],
+            [`${metric.code}.value`, ""],
+            [`${metric.code}.quota`, ""],
+          ]),
+        ),
+      ),
+    );
+    expect(result.ok && result.value.values.every((value) => value.status === "unavailable" && !("value" in value))).toBe(true);
+  });
+
+  it("accepts a normal 0 when the dashboard showed a number", () => {
+    const result = parseP6UsageForm(validForm({ "storage_size.status": "measured", "storage_size.value": "0.00" }));
+    expect(result.ok && result.value.values[4]).toEqual({ metric: "storage_size", status: "measured", value: "0.00", unit: "GB", quota: "100" });
+  });
+
+  it("refuses an empty value for a metric marked as measured", () => {
     expect(parseP6UsageForm(validForm({ "storage_size.value": "" }))).toEqual({ ok: false, error: "value" });
+  });
+
+  it.each(P6_METRICS.map((metric) => metric.code))("refuses %s with no choice made (never read as a value or as 0)", (code) => {
+    const form = validForm();
+    delete form[`${code}.status`];
+    expect(parseP6UsageForm(form)).toEqual({ ok: false, error: "status" });
+  });
+
+  it.each([["on"], ["MEASURED"], ["zero"], [""], ["measured "]])("refuses an unknown choice %j", (status) => {
+    expect(parseP6UsageForm(validForm({ "egress.status": status }))).toEqual({ ok: false, error: "status" });
+  });
+
+  it("checks the choice before any number, so a missing choice with an empty value is a choice error", () => {
+    const form = validForm({ "egress.value": "" });
+    delete form["egress.status"];
+    expect(parseP6UsageForm(form)).toEqual({ ok: false, error: "status" });
+  });
+
+  it.each([
+    [{ "egress.value": "0" }],
+    [{ "egress.value": "0", "egress.quota": "" }],
+    [{ "egress.value": "", "egress.quota": "250" }],
+  ])("refuses \"unavailable\" with a number typed in (%j)", (overrides) => {
+    expect(parseP6UsageForm(validForm({ "egress.status": "unavailable", ...overrides }))).toEqual({ ok: false, error: "status_value" });
+  });
+
+  it("ignores the leftover unit of an unavailable byte metric", () => {
+    const result = parseP6UsageForm(
+      validForm({ "egress.status": "unavailable", "egress.value": "", "egress.quota": "", "egress.unit": "MB" }),
+    );
+    expect(result.ok && result.value.values[0]).toEqual({ metric: "egress", status: "unavailable" });
   });
 
   it.each([
@@ -196,5 +248,7 @@ describe("pickP6RawForm", () => {
     };
     expect(pickP6RawForm((name) => source[name])).toEqual({ checkedAt: "2026-11-02T21:30", "egress.value": "0.008" });
     expect(P6_FORM_FIELDS).toHaveLength(5 + 11 * 4);
+    expect(P6_FORM_FIELDS).toContain("storage_size.status");
+    expect(P6_FORM_FIELDS.some((name) => name.endsWith(".unavailable"))).toBe(false);
   });
 });

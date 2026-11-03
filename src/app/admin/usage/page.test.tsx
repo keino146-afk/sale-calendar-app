@@ -250,6 +250,43 @@ describe("AdminUsagePage input form (mobile)", () => {
     expect(html).not.toMatch(/method="get"/i);
   });
 
+  it("asks for an explicit choice per metric: two radios each, none chosen in advance, required", async () => {
+    const html = await render();
+    for (const code of ["egress", "storage_size", "monthly_active_users", "disk_size_production"]) {
+      expect(html).toMatch(new RegExp(`<input(?=[^>]*type="radio")(?=[^>]*name="${code}\\.status")(?=[^>]*value="measured")(?=[^>]*required="")[^>]*/>`));
+      expect(html).toMatch(new RegExp(`<input(?=[^>]*type="radio")(?=[^>]*name="${code}\\.status")(?=[^>]*value="unavailable")[^>]*/>`));
+    }
+    expect(html.match(/name="[a-z_]+\.status" value="measured"/g)).toHaveLength(11);
+    expect(html.match(/name="[a-z_]+\.status" value="unavailable"/g)).toHaveLength(11);
+    expect(html).not.toMatch(/type="radio"[^>]*checked=""/);
+    expect(html).not.toContain('type="checkbox" name="storage_size.unavailable"');
+  });
+
+  it("explains a normal 0 against \"取得できなかった\", with the Storage example, and the safe side when unsure", async () => {
+    const html = await render();
+    expect(html).toContain('data-value-status-guide="true"');
+    expect(html).toContain("0 と表示されていれば、正常な 0 として入力します");
+    expect(html).toContain("No data しか確認できない");
+    expect(html).toContain("Average in period: 0.00 GB");
+    expect(html).toContain("集計欄の 0.00 GB が誤りとは言えません");
+    expect(html).toContain("0.00 GB は、元のデータが新しいことの保証ではありません");
+    expect(html).toContain("判断できないときは「取得できなかった」を選んでください（安全側です）");
+  });
+
+  it("tells the admin to leave the data time empty unless the dashboard shows one", async () => {
+    const html = await render();
+    expect(html).toContain("表示されていない場合は空欄にし、推測で入力しないでください");
+    expect(html).toContain("確認時刻より24時間以上前の時刻は、古すぎるため無効な確認になります");
+  });
+
+  it("refills the chosen status from the draft cookie", async () => {
+    mocks.readP6Draft.mockResolvedValue({ ...DRAFT, "egress.status": "measured", "storage_size.status": "unavailable" });
+    const html = await render();
+    expect(html).toMatch(/<input(?=[^>]*name="egress\.status")(?=[^>]*value="measured")(?=[^>]*checked="")[^>]*\/>/);
+    expect(html).toMatch(/<input(?=[^>]*name="storage_size\.status")(?=[^>]*value="unavailable")(?=[^>]*checked="")[^>]*\/>/);
+    expect(html).not.toMatch(/<input(?=[^>]*name="cached_egress\.status")(?=[^>]*checked="")[^>]*\/>/);
+  });
+
   it("refills the form from the draft cookie", async () => {
     mocks.readP6Draft.mockResolvedValue(DRAFT);
     const html = await render();
@@ -258,7 +295,9 @@ describe("AdminUsagePage input form (mobile)", () => {
   });
 
   it("shows only known error codes, never query text", async () => {
-    expect(await render({ error: "value" })).toContain("すべての項目に使用量と上限を入力してください");
+    expect(await render({ error: "value" })).toContain("「数値を確認できた」を選んだ項目には、使用量と上限を正しく入力してください");
+    expect(await render({ error: "status" })).toContain("すべての項目で「数値を確認できた」か「取得できなかった」を選んでください");
+    expect(await render({ error: "status_value" })).toContain("「取得できなかった」を選んだ項目には、使用量と上限を入力しないでください");
     const html = await render({ error: "<script>x</script>", done: "<b>" });
     expect(html).not.toContain("<script>x");
     expect(html).not.toContain("<b>");
@@ -293,6 +332,11 @@ describe("AdminUsagePage confirmation step", () => {
       "realtime_messages.quota": "5000000",
       "realtime_peak_connections.value": "0",
       "realtime_peak_connections.quota": "500",
+    ...Object.fromEntries(
+      ["egress", "cached_egress", "edge_function_invocations", "monthly_active_users", "storage_size", "realtime_messages", "realtime_peak_connections", "log_ingestion", "log_query", "disk_size_preview", "disk_size_production"].map(
+        (code) => [`${code}.status`, "measured"],
+      ),
+    ),
   };
 
   it("validates the draft without storing and asks for confirmation", async () => {
@@ -336,6 +380,68 @@ describe("AdminUsagePage confirmation step", () => {
     const tooLarge = await render({ error: "draft_too_large" });
     expect(tooLarge).toContain("入力内容が長すぎるため保存できませんでした（以前の入力も破棄しました）");
     expect(tooLarge).not.toContain('action="/__action/commit"');
+  });
+
+  it("warns about every metric that will be stored as 0", async () => {
+    mocks.readP6Draft.mockResolvedValue(CONFIRM_DRAFT);
+    mocks.previewP6UsageCheck.mockResolvedValue({
+      ok: true,
+      preview: {
+        ...PREVIEW,
+        values: [
+          PREVIEW.values[0],
+          { metric: "storage_size", status: "measured", enteredValue: "0.00", enteredUnit: "GB", usage: "0.00", percent: "0.000", level: 0, quota: "100", enteredQuota: "100" },
+          { metric: "monthly_active_users", status: "measured", enteredValue: "0", enteredUnit: "count", usage: "0", percent: "0.000", level: 0, quota: "100000", enteredQuota: "100000" },
+          { metric: "cached_egress", status: "unavailable", enteredValue: null, enteredUnit: null, usage: null, percent: null, level: null, quota: null, enteredQuota: null },
+        ],
+      },
+    });
+    const html = await render({ step: "confirm" });
+    expect(html).toContain('data-zero-notice="true"');
+    expect(html).toContain("次の項目は 0 として保存されます：Storage Size");
+    expect(html).toContain("Monthly Active Users");
+    expect(html.slice(html.indexOf('data-zero-notice="true"'), html.indexOf("</div>", html.indexOf('data-zero-notice="true"')))).not.toContain("Cached Egress");
+    expect(html).toContain("入力に戻って「取得できなかった」を選んでください");
+  });
+
+  it("shows no 0 notice when nothing is 0, and no new-period notice within the same period", async () => {
+    mocks.readP6Draft.mockResolvedValue(CONFIRM_DRAFT);
+    mocks.previewP6UsageCheck.mockResolvedValue({ ok: true, preview: PREVIEW });
+    const html = await render({ step: "confirm" });
+    expect(html).not.toContain("data-zero-notice");
+    expect(html).not.toContain("data-new-period-notice");
+  });
+
+  it("marks the first check of a new billing period, against the newest valid check on record", async () => {
+    mocks.readP6Draft.mockResolvedValue({ ...CONFIRM_DRAFT, periodStart: "2026-12-02", periodEnd: "2027-01-02" });
+    mocks.previewP6UsageCheck.mockResolvedValue({ ok: true, preview: PREVIEW });
+    const html = await render({ step: "confirm" });
+    expect(html).toContain('data-new-period-notice="first"');
+    expect(html).toContain("この請求期間で最初の確認です。");
+    expect(html).toContain("公式画面の数値がまだ反映されていないことがあります");
+  });
+
+  it("ignores voided and invalid checks when deciding the period, and says so when it cannot tell", async () => {
+    mocks.readP6Draft.mockResolvedValue(CONFIRM_DRAFT);
+    mocks.previewP6UsageCheck.mockResolvedValue({ ok: true, preview: PREVIEW });
+    mocks.getP6Status.mockResolvedValue({
+      ...STATUS,
+      checks: [
+        { ...STATUS.checks[0], id: "a", isValid: false, invalidReasons: ["data_too_old"] },
+        { ...STATUS.checks[0], id: "b", voidedAt: "2026-11-06T01:00:00+00:00", voidedReason: "input_error" },
+      ],
+    });
+    expect(await render({ step: "confirm" })).toContain('data-new-period-notice="unknown"');
+    mocks.getP6Status.mockRejectedValue(new Error("down"));
+    expect(await render({ step: "confirm" })).toContain('data-new-period-notice="unknown"');
+  });
+
+  it("explains data_too_old when the database finds the data time too old", async () => {
+    mocks.readP6Draft.mockResolvedValue(CONFIRM_DRAFT);
+    mocks.previewP6UsageCheck.mockResolvedValue({ ok: true, preview: { ...PREVIEW, reasons: ["data_too_old"] } });
+    const html = await render({ step: "confirm" });
+    expect(html).toContain("データの対象時刻が古すぎます（公式画面の確認時刻より24時間以上前）");
+    expect(html).toContain('<input type="hidden" name="expectedValid" value="false"/>');
   });
 
   it("falls back to the form when there is no draft", async () => {
