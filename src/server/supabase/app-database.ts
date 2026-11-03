@@ -60,6 +60,20 @@ type LifecycleFunctions = {
 };
 type LifecycleFunctionName = keyof LifecycleFunctions;
 
+// The P6 usage check takes null for the data time (not shown on the
+// dashboard) and, when it only validates, for the page version and the
+// shown validity.
+type GeneratedRecordP6UsageCheck = GeneratedPublic["Functions"]["admin_record_p6_usage_check"];
+
+export type RecordP6UsageCheckArgs = Omit<
+  GeneratedRecordP6UsageCheck["Args"],
+  "p_data_as_of" | "p_expected_version" | "p_expected_valid"
+> & {
+  p_data_as_of: string | null;
+  p_expected_version: number | null;
+  p_expected_valid: boolean | null;
+};
+
 export type AppDatabase = Omit<GeneratedDatabase, "public"> & {
   public: Omit<GeneratedPublic, "Tables" | "Functions"> & {
     Tables: Omit<GeneratedPublic["Tables"], "sale_events"> & {
@@ -67,11 +81,12 @@ export type AppDatabase = Omit<GeneratedDatabase, "public"> & {
     };
     Functions: Omit<
       GeneratedPublic["Functions"],
-      "import_collection_candidate" | "update_sale_event" | LifecycleFunctionName
+      "import_collection_candidate" | "update_sale_event" | "admin_record_p6_usage_check" | LifecycleFunctionName
     > &
       LifecycleFunctions & {
         import_collection_candidate: Omit<GeneratedImportCandidate, "Args"> & { Args: ImportCollectionCandidateArgs };
         update_sale_event: Omit<GeneratedUpdateSaleEvent, "Args"> & { Args: UpdateSaleEventArgs };
+        admin_record_p6_usage_check: Omit<GeneratedRecordP6UsageCheck, "Args"> & { Args: RecordP6UsageCheckArgs };
       };
   };
 };

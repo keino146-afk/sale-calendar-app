@@ -75,6 +75,12 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
           >
             収集候補
           </Link>
+          <Link
+            href="/admin/usage"
+            className="rounded-2xl bg-white px-4 py-3 text-center text-[15px] font-semibold text-blue-600 shadow-sm ring-1 ring-black/5"
+          >
+            使用量の監視（Supabase）
+          </Link>
           {/* The public page, to check how published sales look to visitors. */}
           <Link
             href="/calendar"

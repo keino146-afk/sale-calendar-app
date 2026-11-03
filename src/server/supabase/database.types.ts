@@ -105,7 +105,25 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "archive_sale_event":
+            "admin_get_p6_status":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"admin_record_p6_monitoring_failure":
+{ Args: { "p_kind": string }; Returns: string
+                           },
+"admin_record_p6_usage_check":
+{ Args: { "p_checked_at": string,"p_commit": boolean,"p_data_as_of": string,"p_expected_valid": boolean,"p_expected_version": number,"p_period_end": string,"p_period_start": string,"p_spend_cap": string,"p_values": Json }; Returns: Json
+                           },
+"admin_resume_p6":
+{ Args: { "p_expected_version": number,"p_target": string }; Returns: Json
+                           },
+"admin_stop_p6":
+{ Args: { "p_reason": string }; Returns: string
+                           },
+"admin_void_p6_usage_check":
+{ Args: { "p_check_id": string,"p_expected_version": number,"p_reason": string }; Returns: undefined
+                           },
+"archive_sale_event":
 { Args: { "p_id": string }; Returns: undefined
                            },
 "current_user_is_admin":
