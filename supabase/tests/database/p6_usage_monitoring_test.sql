@@ -257,7 +257,7 @@ select is(pg_temp.reasons(pg_temp.pre('2026-11-05 01:00:00.000001+00', '2026-11-
 select is(pg_temp.reasons(pg_temp.pre('2026-11-05 00:05+00', '2026-11-05 00:00+00', null, 'on', '2026-11-02', '2026-11-05')), 'period_invalid', 'a 3-day billing period is invalid');
 select is(pg_temp.reasons(pg_temp.pre('2026-11-02 11:05+00', '2026-11-02 11:00+00')), 'period_not_current', 'a reading before the latest possible period start is invalid');
 select is(pg_temp.reasons(pg_temp.pre('2026-11-05 00:05+00', '2026-11-05 00:00+00', null, 'on', '2026-11-02', '2026-12-02', '2026-11-05 00:01+00')), 'data_as_of_future', 'a data time after the reading is invalid');
-select is(pg_temp.reasons(pg_temp.pre('2026-11-05 00:05+00', '2026-11-05 00:00+00', null, 'on', '2026-11-02', '2026-12-02', '2026-11-01 00:00+00')), 'data_stale', 'a data time before the period is invalid');
+select is(pg_temp.reasons(pg_temp.pre('2026-11-05 00:05+00', '2026-11-05 00:00+00', null, 'on', '2026-11-02', '2026-12-02', '2026-11-01 00:00+00')), 'data_stale,data_too_old', 'a data time before the period is invalid (and, being 24 hours or more before the reading, also too old)');
 select is(pg_temp.reasons(pg_temp.pre('2026-11-05 00:05+00', '2026-11-05 00:00+00', null, 'on', '2026-11-02', '2026-12-02', '2026-11-04 23:00+00')), '', 'a data time inside the period is kept');
 select is(pg_temp.pre('2026-11-05 00:05+00', '2026-11-05 00:00+00', pg_temp.egress('500', 'MB')) -> 'values' -> 0 ->> 'usage', '0.50000000000000000000', '500 MB is converted to 0.5 GB on the server');
 select is((pg_temp.pre('2026-11-05 00:05+00', '2026-11-05 00:00+00', pg_temp.egress('1', 'KB')) -> 'values' -> 0 ->> 'usage')::numeric, 0.000001::numeric, '1 KB is converted to 0.000001 GB');

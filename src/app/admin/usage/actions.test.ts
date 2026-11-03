@@ -68,6 +68,9 @@ function rawForm(overrides: Record<string, string> = {}): Record<string, string>
     fields[`${code}.value`] = "0";
     fields[`${code}.quota`] = quota;
   }
+  for (const code of Object.keys(fields).filter((name) => name.endsWith(".value")).map((name) => name.slice(0, -".value".length))) {
+    fields[`${code}.status`] = "measured";
+  }
   return { ...fields, ...overrides };
 }
 
@@ -153,6 +156,20 @@ describe("previewUsageAction", () => {
     expect(url).toBe("/admin/usage?error=value#input");
     expect(url).not.toContain(SECRETISH_VALUE);
     expect(mocks.saveP6Draft).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns to the form when a metric has no choice, keeping the draft and no numbers in the URL", async () => {
+    const fields = rawForm();
+    delete fields["storage_size.status"];
+    const url = await redirectUrl(actions.previewUsageAction(form(fields)));
+    expect(url).toBe("/admin/usage?error=status#input");
+    expect(url).not.toContain(SECRETISH_VALUE);
+    expect(mocks.recordP6UsageCheck).not.toHaveBeenCalled();
+  });
+
+  it("refuses \"unavailable\" with a number typed in", async () => {
+    const url = await redirectUrl(actions.previewUsageAction(form(rawForm({ "storage_size.status": "unavailable" }))));
+    expect(url).toBe("/admin/usage?error=status_value#input");
   });
 
   it("stops at a draft too large to keep: no confirmation step, no numbers in the URL", async () => {
@@ -242,7 +259,7 @@ describe("commitUsageAction", () => {
   });
 
   it("refuses a change in any one field, even with the same version and validity", async () => {
-    for (const [name, value] of [["checkedAt", "2026-11-02T21:31"], ["egress.unit", "MB"], ["storage_size.unavailable", "on"], ["dataAsOf", "2026-11-02T20:00"]]) {
+    for (const [name, value] of [["checkedAt", "2026-11-02T21:31"], ["egress.unit", "MB"], ["storage_size.status", "unavailable"], ["dataAsOf", "2026-11-02T20:00"]]) {
       mocks.readP6Draft.mockResolvedValue(rawForm({ [name]: value }));
       expect(await redirectUrl(actions.commitUsageAction(commitForm()))).toBe("/admin/usage?step=confirm&error=draft_changed#confirm");
     }
@@ -270,6 +287,22 @@ describe("commitUsageAction", () => {
     mocks.readP6Draft.mockResolvedValue(Object.fromEntries(Object.entries(rawForm()).reverse()));
     expect(await redirectUrl(actions.commitUsageAction(commitForm()))).toBe("/admin/usage?done=recorded");
     expect(mocks.recordP6UsageCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not store a draft without a choice for every metric, even with a matching digest", async () => {
+    const shown = rawForm();
+    delete shown["egress.status"];
+    mocks.readP6Draft.mockResolvedValue(shown);
+    expect(await redirectUrl(actions.commitUsageAction(commitForm({}, shown)))).toBe("/admin/usage?error=status#input");
+    expect(mocks.recordP6UsageCheck).not.toHaveBeenCalled();
+  });
+
+  it("stores an unavailable metric as unavailable, never as 0", async () => {
+    const shown = rawForm({ "storage_size.status": "unavailable", "storage_size.value": "", "storage_size.quota": "" });
+    mocks.readP6Draft.mockResolvedValue(shown);
+    expect(await redirectUrl(actions.commitUsageAction(commitForm({}, shown)))).toBe("/admin/usage?done=recorded");
+    const draft = mocks.recordP6UsageCheck.mock.calls[0][1];
+    expect(draft.values.find((value: { metric: string }) => value.metric === "storage_size")).toEqual({ metric: "storage_size", status: "unavailable" });
   });
 
   it("does not reuse a stored draft: the second commit finds nothing", async () => {

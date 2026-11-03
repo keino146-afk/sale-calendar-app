@@ -41,6 +41,15 @@ describe("saveP6Draft", () => {
     expect(await readP6Draft()).toEqual(DRAFT);
   });
 
+  it("keeps a full realistic draft, with a choice for every metric", async () => {
+    const { P6_FORM_FIELDS } = await import("@/lib/p6-usage-form");
+    const full = Object.fromEntries(
+      P6_FORM_FIELDS.map((name) => [name, name.endsWith(".status") ? "unavailable" : name.endsWith(".unit") ? "GB" : "9,999,999,999.999"]),
+    );
+    expect(await saveP6Draft(full)).toBe(true);
+    expect(await readP6Draft()).toEqual(full);
+  });
+
   it("refuses a draft too large to keep and removes the earlier draft", async () => {
     await saveP6Draft(DRAFT);
     expect(await saveP6Draft(await oversized())).toBe(false);
