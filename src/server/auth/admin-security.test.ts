@@ -108,13 +108,14 @@ describe("admin security boundary", () => {
     expect(code).toContain('type="submit"');
     expect(code).toContain("disabled={pending}");
 
-    // Only the four admin mutation forms use it (not login, logout or public pages).
+    // Only the admin mutation forms use it (not login, logout or public pages).
     expect(await filesMatching(APP_CODE, /\bSubmitButton\b/)).toEqual([
       "src/app/admin/_components/SubmitButton.tsx",
       "src/app/admin/new/page.tsx",
       "src/app/admin/sales/[saleId]/edit/page.tsx",
       "src/app/admin/sales/[saleId]/page.tsx",
       "src/app/admin/sales/[saleId]/reject/page.tsx",
+      "src/app/admin/usage/page.tsx",
     ]);
     // Those forms no longer have a plain submit button of their own.
     for (const page of [
@@ -122,6 +123,7 @@ describe("admin security boundary", () => {
       "src/app/admin/sales/[saleId]/edit/page.tsx",
       "src/app/admin/sales/[saleId]/page.tsx",
       "src/app/admin/sales/[saleId]/reject/page.tsx",
+      "src/app/admin/usage/page.tsx",
     ]) {
       const source = await readFile(page, "utf8");
       expect(source).not.toMatch(/^\s*["']use client["']/m);
@@ -208,6 +210,13 @@ describe("admin security boundary", () => {
       "archive_sale_event",
       "reopen_sale_event",
       "update_sale_event",
+      // P6 usage monitoring (admin checked inside each RPC).
+      "admin_get_p6_status",
+      "admin_record_p6_usage_check",
+      "admin_void_p6_usage_check",
+      "admin_record_p6_monitoring_failure",
+      "admin_stop_p6",
+      "admin_resume_p6",
     ]);
     const used = new Set<string>();
     for (const file of APP_CODE) {
@@ -225,7 +234,11 @@ describe("admin security boundary", () => {
         file.startsWith("src/app/admin/") && file.endsWith("actions.ts") && file !== "src/app/admin/actions.ts",
     );
     expect(actionFiles).toEqual(
-      expect.arrayContaining(["src/app/admin/new/actions.ts", "src/app/admin/sales/[saleId]/actions.ts"]),
+      expect.arrayContaining([
+        "src/app/admin/new/actions.ts",
+        "src/app/admin/sales/[saleId]/actions.ts",
+        "src/app/admin/usage/actions.ts",
+      ]),
     );
     for (const file of actionFiles) {
       const code = await readFile(file, "utf8");
