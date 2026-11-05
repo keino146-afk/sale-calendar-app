@@ -29,7 +29,7 @@ select is((select coalesce(array_agg(s.sig order by s.sig collate "C"), '{}') fr
 select is(
   (select string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' order by ordinal_position)
    from information_schema.columns where table_schema = 'private' and table_name = 'push_device_registrations'),
-  'id:uuid:NO,status:text:NO,push_token:text:YES,push_token_hash:bytea:YES,secret_hash:bytea:YES,confirmed_token_generation:integer:NO,send_paused:boolean:NO,notifications_enabled:boolean:NO,expires_at:timestamp with time zone:NO,created_at:timestamp with time zone:NO,updated_at:timestamp with time zone:NO,disabled_at:timestamp with time zone:YES,disabled_reason:text:YES',
+  'id:uuid:NO,status:text:NO,push_token:text:YES,push_token_hash:bytea:YES,secret_hash:bytea:YES,confirmed_token_generation:integer:NO,send_paused:boolean:NO,notifications_enabled:boolean:NO,expires_at:timestamp with time zone:NO,created_at:timestamp with time zone:NO,updated_at:timestamp with time zone:NO,disabled_at:timestamp with time zone:YES,disabled_reason:text:YES,sendable_since:timestamp with time zone:YES',
   'push_device_registrations columns, types and nullability'
 );
 select is(
