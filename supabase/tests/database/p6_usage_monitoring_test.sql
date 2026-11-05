@@ -306,116 +306,116 @@ select is(pg_temp.resume('2026-11-06 00:10+00', 'send'), 'not_stopped', 'resumin
 select is(pg_temp.flags('2026-11-06 00:10+00'), 'reg=1 tc=1 send=1 grace=0', 'everything allowed');
 
 -- ============================================================
--- Expiry: 29 hours stops registrations, 30 hours stops sending
+-- Expiry: 36 hours stops registrations, 37 hours stops sending
 -- ============================================================
 
-select is((pg_temp.at('2026-11-06 00:10+00') -> 'state' ->> 'current_check_registration_deadline')::timestamptz, '2026-11-07 05:00+00'::timestamptz, 'registration deadline: reading + 29 hours');
-select is((pg_temp.at('2026-11-06 00:10+00') -> 'state' ->> 'current_check_send_deadline')::timestamptz, '2026-11-07 06:00+00'::timestamptz, 'send deadline: reading + 30 hours');
-select is(pg_temp.flags('2026-11-07 04:59:59.999999+00'), 'reg=1 tc=1 send=1 grace=0', '29 h minus 1 us: everything allowed');
-select is(pg_temp.flags('2026-11-07 05:00+00'), 'reg=0 tc=0 send=1 grace=1', '29 h: registrations and token changes stop, sending in grace');
-select is(pg_temp.at('2026-11-07 05:00+00') -> 'state' ->> 'registration_stop_reason', 'expired', 'reason: expired');
-select is(pg_temp.flags('2026-11-07 05:59:59.999999+00'), 'reg=0 tc=0 send=1 grace=1', '30 h minus 1 us: sending still in grace');
-select is(pg_temp.flags('2026-11-07 06:00+00'), 'reg=0 tc=0 send=0 grace=0', '30 h: sending stops');
+select is((pg_temp.at('2026-11-06 07:10+00') -> 'state' ->> 'current_check_registration_deadline')::timestamptz, '2026-11-07 12:00+00'::timestamptz, 'registration deadline: reading + 36 hours');
+select is((pg_temp.at('2026-11-06 07:10+00') -> 'state' ->> 'current_check_send_deadline')::timestamptz, '2026-11-07 13:00+00'::timestamptz, 'send deadline: reading + 37 hours');
+select is(pg_temp.flags('2026-11-07 11:59:59.999999+00'), 'reg=1 tc=1 send=1 grace=0', '36 h minus 1 us: everything allowed');
+select is(pg_temp.flags('2026-11-07 12:00+00'), 'reg=0 tc=0 send=1 grace=1', '36 h: registrations and token changes stop, sending in grace');
+select is(pg_temp.at('2026-11-07 12:00+00') -> 'state' ->> 'registration_stop_reason', 'expired', 'reason: expired');
+select is(pg_temp.flags('2026-11-07 12:59:59.999999+00'), 'reg=0 tc=0 send=1 grace=1', '37 h minus 1 us: sending still in grace');
+select is(pg_temp.flags('2026-11-07 13:00+00'), 'reg=0 tc=0 send=0 grace=0', '37 h: sending stops');
 
 -- A valid check during the grace hour neither reopens nor extends anything.
-select is((pg_temp.rec('2026-11-07 05:30+00', '2026-11-07 05:20+00') ->> 'valid')::boolean, true, 'c4 (Nov 7 05:20, during the grace hour) valid');
-select is(pg_temp.flags('2026-11-07 05:30+00'), 'reg=0 tc=0 send=1 grace=1', 'c4 does not reopen registrations');
-select is(pg_temp.flags('2026-11-07 06:00+00'), 'reg=0 tc=0 send=0 grace=0', 'c4 does not extend the grace hour');
-select is((pg_temp.at('2026-11-07 06:00+00') -> 'state' ->> 'send_grace_until')::timestamptz, '2026-11-07 06:00+00'::timestamptz, 'grace end unchanged');
+select is((pg_temp.rec('2026-11-07 12:30+00', '2026-11-07 12:20+00') ->> 'valid')::boolean, true, 'c4 (Nov 7 12:20, during the grace hour) valid');
+select is(pg_temp.flags('2026-11-07 12:30+00'), 'reg=0 tc=0 send=1 grace=1', 'c4 does not reopen registrations');
+select is(pg_temp.flags('2026-11-07 13:00+00'), 'reg=0 tc=0 send=0 grace=0', 'c4 does not extend the grace hour');
+select is((pg_temp.at('2026-11-07 13:00+00') -> 'state' ->> 'send_grace_until')::timestamptz, '2026-11-07 13:00+00'::timestamptz, 'grace end unchanged');
 
 -- ============================================================
 -- Recovery after expiry
 -- ============================================================
 
-select is(pg_temp.resume('2026-11-07 06:30+00', 'send'), 'no_check_after_stop', 'send: c4 was read before sending stopped');
-select is(pg_temp.resume('2026-11-07 06:30+00', 'registration'), 'second_check_missing', 'registration: only one check after its stop');
-select is((pg_temp.rec('2026-11-07 07:05+00', '2026-11-07 07:00+00') ->> 'valid')::boolean, true, 'c5 (Nov 7 07:00) valid');
-select isnt(pg_temp.fail('2026-11-07 08:00+00'), null, 'failure recorded at Nov 7 08:00');
-select is((pg_temp.rec('2026-11-08 07:35+00', '2026-11-08 07:30+00') ->> 'valid')::boolean, true, 'c6 (Nov 8 07:30) valid');
-select is(pg_temp.resume('2026-11-08 07:40+00', 'send'), 'failure_between_checks', 'a failure between the two checks blocks the resume');
-select is((pg_temp.rec('2026-11-09 08:05+00', '2026-11-09 08:00+00') ->> 'valid')::boolean, true, 'c7 (Nov 9 08:00) valid');
-select is(pg_temp.resume('2026-11-09 08:10+00', 'send'), 'ok', 'c6 and c7 (24.5 h, zero usage both times): sending resumed');
-select is(pg_temp.resume('2026-11-09 08:10+00', 'registration'), 'ok', 'registrations resumed');
-select is(pg_temp.flags('2026-11-09 08:10+00'), 'reg=1 tc=1 send=1 grace=0', 'everything allowed again');
+select is(pg_temp.resume('2026-11-07 13:30+00', 'send'), 'no_check_after_stop', 'send: c4 was read before sending stopped');
+select is(pg_temp.resume('2026-11-07 13:30+00', 'registration'), 'second_check_missing', 'registration: only one check after its stop');
+select is((pg_temp.rec('2026-11-07 14:05+00', '2026-11-07 14:00+00') ->> 'valid')::boolean, true, 'c5 (Nov 7 14:00) valid');
+select isnt(pg_temp.fail('2026-11-07 15:00+00'), null, 'failure recorded at Nov 7 15:00');
+select is((pg_temp.rec('2026-11-08 14:35+00', '2026-11-08 14:30+00') ->> 'valid')::boolean, true, 'c6 (Nov 8 14:30) valid');
+select is(pg_temp.resume('2026-11-08 14:40+00', 'send'), 'failure_between_checks', 'a failure between the two checks blocks the resume');
+select is((pg_temp.rec('2026-11-09 15:05+00', '2026-11-09 15:00+00') ->> 'valid')::boolean, true, 'c7 (Nov 9 15:00) valid');
+select is(pg_temp.resume('2026-11-09 15:10+00', 'send'), 'ok', 'c6 and c7 (24.5 h, zero usage both times): sending resumed');
+select is(pg_temp.resume('2026-11-09 15:10+00', 'registration'), 'ok', 'registrations resumed');
+select is(pg_temp.flags('2026-11-09 15:10+00'), 'reg=1 tc=1 send=1 grace=0', 'everything allowed again');
 
 -- ============================================================
 -- Monitoring failure: registrations stop at once, sending gets 1 hour
 -- ============================================================
 
-select isnt(pg_temp.fail('2026-11-09 10:00+00', 'usage_unreadable'), null, 'failure recorded at Nov 9 10:00');
-select is(pg_temp.flags('2026-11-09 10:00+00'), 'reg=0 tc=0 send=1 grace=1', 'right after the failure: registrations stop, sending in grace');
-select is(pg_temp.at('2026-11-09 10:00+00') -> 'state' ->> 'registration_stop_reason', 'monitoring_failure', 'reason: monitoring failure');
-select is((pg_temp.at('2026-11-09 10:00+00') -> 'state' ->> 'send_grace_until')::timestamptz, '2026-11-09 11:00+00'::timestamptz, 'grace until failure + 1 hour');
-select isnt(pg_temp.fail('2026-11-09 10:30+00'), null, 'a second failure at 10:30');
-select is((pg_temp.rec('2026-11-09 10:40+00', '2026-11-09 10:35+00') ->> 'valid')::boolean, true, 'c8 (10:35) valid during the grace hour');
-select is((pg_temp.at('2026-11-09 10:40+00') -> 'state' ->> 'send_grace_until')::timestamptz, '2026-11-09 11:00+00'::timestamptz, 'neither the second failure nor c8 extends the grace');
-select is(pg_temp.flags('2026-11-09 10:59:59.999999+00'), 'reg=0 tc=0 send=1 grace=1', '1 h minus 1 us: sending still in grace');
-select is(pg_temp.flags('2026-11-09 11:00+00'), 'reg=0 tc=0 send=0 grace=0', '1 h after the failure: sending stops');
-select is(pg_temp.at('2026-11-09 11:00+00') -> 'state' ->> 'send_stop_reason', 'monitoring_failure', 'send reason: monitoring failure');
-select is(pg_temp.resume('2026-11-09 11:05+00', 'send'), 'no_check_after_stop', 'no automatic or immediate resume after the failure');
+select isnt(pg_temp.fail('2026-11-09 17:00+00', 'usage_unreadable'), null, 'failure recorded at Nov 9 17:00');
+select is(pg_temp.flags('2026-11-09 17:00+00'), 'reg=0 tc=0 send=1 grace=1', 'right after the failure: registrations stop, sending in grace');
+select is(pg_temp.at('2026-11-09 17:00+00') -> 'state' ->> 'registration_stop_reason', 'monitoring_failure', 'reason: monitoring failure');
+select is((pg_temp.at('2026-11-09 17:00+00') -> 'state' ->> 'send_grace_until')::timestamptz, '2026-11-09 18:00+00'::timestamptz, 'grace until failure + 1 hour');
+select isnt(pg_temp.fail('2026-11-09 17:30+00'), null, 'a second failure at 17:30');
+select is((pg_temp.rec('2026-11-09 17:40+00', '2026-11-09 17:35+00') ->> 'valid')::boolean, true, 'c8 (17:35) valid during the grace hour');
+select is((pg_temp.at('2026-11-09 17:40+00') -> 'state' ->> 'send_grace_until')::timestamptz, '2026-11-09 18:00+00'::timestamptz, 'neither the second failure nor c8 extends the grace');
+select is(pg_temp.flags('2026-11-09 17:59:59.999999+00'), 'reg=0 tc=0 send=1 grace=1', '1 h minus 1 us: sending still in grace');
+select is(pg_temp.flags('2026-11-09 18:00+00'), 'reg=0 tc=0 send=0 grace=0', '1 h after the failure: sending stops');
+select is(pg_temp.at('2026-11-09 18:00+00') -> 'state' ->> 'send_stop_reason', 'monitoring_failure', 'send reason: monitoring failure');
+select is(pg_temp.resume('2026-11-09 18:05+00', 'send'), 'no_check_after_stop', 'no automatic or immediate resume after the failure');
 
-select is((pg_temp.rec('2026-11-09 11:35+00', '2026-11-09 11:30+00') ->> 'valid')::boolean, true, 'c9 (Nov 9 11:30) valid');
-select is((pg_temp.rec('2026-11-10 11:35+00', '2026-11-10 11:30+00') ->> 'valid')::boolean, true, 'c10 (Nov 10 11:30) valid');
-select is(pg_temp.resume('2026-11-10 11:40+00', 'send'), 'ok', 'sending resumed after two checks 24 h apart');
-select is(pg_temp.resume('2026-11-10 11:40+00', 'registration'), 'ok', 'registrations resumed');
+select is((pg_temp.rec('2026-11-09 18:35+00', '2026-11-09 18:30+00') ->> 'valid')::boolean, true, 'c9 (Nov 9 18:30) valid');
+select is((pg_temp.rec('2026-11-10 18:35+00', '2026-11-10 18:30+00') ->> 'valid')::boolean, true, 'c10 (Nov 10 18:30) valid');
+select is(pg_temp.resume('2026-11-10 18:40+00', 'send'), 'ok', 'sending resumed after two checks 24 h apart');
+select is(pg_temp.resume('2026-11-10 18:40+00', 'registration'), 'ok', 'registrations resumed');
 
 -- ============================================================
 -- Manual stop: immediate, no automatic resume
 -- ============================================================
 
-select isnt(pg_temp.stop('2026-11-10 12:00+00'), null, 'manual stop at Nov 10 12:00');
-select is(pg_temp.flags('2026-11-10 12:00+00'), 'reg=0 tc=0 send=0 grace=0', 'manual stop: everything stops at once, no grace');
-select is((pg_temp.at('2026-11-10 12:00+00') -> 'state' ->> 'send_stop_reason') || '/' || (pg_temp.at('2026-11-10 12:00+00') -> 'state' ->> 'registration_stop_reason'), 'manual_stop/manual_stop', 'reason: manual stop for both');
-select is((pg_temp.at('2026-11-10 12:00+00') -> 'state' ->> 'manual_stop_active')::boolean, true, 'manual stop shown as active');
-select is((pg_temp.rec('2026-11-10 12:35+00', '2026-11-10 12:30+00') ->> 'valid')::boolean, true, 'c11 (Nov 10 12:30) valid');
-select is(pg_temp.flags('2026-11-10 12:40+00'), 'reg=0 tc=0 send=0 grace=0', 'a valid check after a manual stop reopens nothing');
-select is(pg_temp.resume('2026-11-10 12:40+00', 'send'), 'second_check_missing', 'one check after the manual stop is not enough');
-select is((pg_temp.rec('2026-11-11 12:35+00', '2026-11-11 12:30+00') ->> 'valid')::boolean, true, 'c12 (Nov 11 12:30) valid');
-select is(pg_temp.resume('2026-11-11 12:40+00', 'send'), 'ok', 'sending resumed by the admin');
-select is(pg_temp.resume('2026-11-11 12:40+00', 'registration'), 'ok', 'registrations resumed by the admin');
-select is((pg_temp.at('2026-11-11 12:40+00') -> 'state' ->> 'manual_stop_active')::boolean, false, 'manual stop no longer active');
+select isnt(pg_temp.stop('2026-11-10 19:00+00'), null, 'manual stop at Nov 10 19:00');
+select is(pg_temp.flags('2026-11-10 19:00+00'), 'reg=0 tc=0 send=0 grace=0', 'manual stop: everything stops at once, no grace');
+select is((pg_temp.at('2026-11-10 19:00+00') -> 'state' ->> 'send_stop_reason') || '/' || (pg_temp.at('2026-11-10 19:00+00') -> 'state' ->> 'registration_stop_reason'), 'manual_stop/manual_stop', 'reason: manual stop for both');
+select is((pg_temp.at('2026-11-10 19:00+00') -> 'state' ->> 'manual_stop_active')::boolean, true, 'manual stop shown as active');
+select is((pg_temp.rec('2026-11-10 19:35+00', '2026-11-10 19:30+00') ->> 'valid')::boolean, true, 'c11 (Nov 10 19:30) valid');
+select is(pg_temp.flags('2026-11-10 19:40+00'), 'reg=0 tc=0 send=0 grace=0', 'a valid check after a manual stop reopens nothing');
+select is(pg_temp.resume('2026-11-10 19:40+00', 'send'), 'second_check_missing', 'one check after the manual stop is not enough');
+select is((pg_temp.rec('2026-11-11 19:35+00', '2026-11-11 19:30+00') ->> 'valid')::boolean, true, 'c12 (Nov 11 19:30) valid');
+select is(pg_temp.resume('2026-11-11 19:40+00', 'send'), 'ok', 'sending resumed by the admin');
+select is(pg_temp.resume('2026-11-11 19:40+00', 'registration'), 'ok', 'registrations resumed by the admin');
+select is((pg_temp.at('2026-11-11 19:40+00') -> 'state' ->> 'manual_stop_active')::boolean, false, 'manual stop no longer active');
 
 -- ============================================================
 -- Invalid check: a monitoring failure; voiding it reopens nothing
 -- ============================================================
 
-insert into ids select 'c13', (pg_temp.rec('2026-11-11 13:05+00', '2026-11-11 13:00+00', null, 'off') ->> 'check_id')::uuid;
+insert into ids select 'c13', (pg_temp.rec('2026-11-11 20:05+00', '2026-11-11 20:00+00', null, 'off') ->> 'check_id')::uuid;
 select is((select count(*)::int from ids), 1, 'c13 (spend cap off) stored as invalid');
-select is(pg_temp.flags('2026-11-11 13:05+00'), 'reg=0 tc=0 send=1 grace=1', 'invalid check: registrations stop, sending in grace');
-select is(pg_temp.at('2026-11-11 13:05+00') -> 'state' ->> 'registration_stop_reason', 'invalid_check', 'reason: invalid check');
-select lives_ok($$select pg_temp.void('2026-11-11 13:10+00', (select id from ids where name = 'c13'))$$, 'c13 voided');
-select is(pg_temp.flags('2026-11-11 13:10+00'), 'reg=0 tc=0 send=1 grace=1', 'voiding the invalid check reopens nothing');
-select throws_ok($$select pg_temp.void('2026-11-11 13:15+00', (select id from ids where name = 'c13'))$$, 'P0002', null, 'voiding twice is refused');
-select throws_ok($$select pg_temp.void('2026-11-11 13:15+00', gen_random_uuid())$$, 'P0002', null, 'voiding an unknown check is refused');
+select is(pg_temp.flags('2026-11-11 20:05+00'), 'reg=0 tc=0 send=1 grace=1', 'invalid check: registrations stop, sending in grace');
+select is(pg_temp.at('2026-11-11 20:05+00') -> 'state' ->> 'registration_stop_reason', 'invalid_check', 'reason: invalid check');
+select lives_ok($$select pg_temp.void('2026-11-11 20:10+00', (select id from ids where name = 'c13'))$$, 'c13 voided');
+select is(pg_temp.flags('2026-11-11 20:10+00'), 'reg=0 tc=0 send=1 grace=1', 'voiding the invalid check reopens nothing');
+select throws_ok($$select pg_temp.void('2026-11-11 20:15+00', (select id from ids where name = 'c13'))$$, 'P0002', null, 'voiding twice is refused');
+select throws_ok($$select pg_temp.void('2026-11-11 20:15+00', gen_random_uuid())$$, 'P0002', null, 'voiding an unknown check is refused');
 select throws_ok($$select public.admin_void_p6_usage_check((select id from ids where name = 'c13'), 'other', 1)$$, 'P0409', null, 'voiding from a stale page is refused');
-select throws_ok($$select public.admin_void_p6_usage_check((select id from ids where name = 'c13'), 'because', (pg_temp.at('2026-11-11 13:15+00') -> 'state' ->> 'version')::bigint)$$, '22023', null, 'a free-text void reason is refused');
-select is(pg_temp.flags('2026-11-11 14:05+00'), 'reg=0 tc=0 send=0 grace=0', 'sending stops 1 hour after the invalid check');
-select is((pg_temp.rec('2026-11-11 14:35+00', '2026-11-11 14:30+00') ->> 'valid')::boolean, true, 'c14 (Nov 11 14:30) valid (the voided c13 is ignored)');
-select is((pg_temp.rec('2026-11-12 14:35+00', '2026-11-12 14:30+00') ->> 'valid')::boolean, true, 'c15 (Nov 12 14:30) valid');
-select is(pg_temp.resume('2026-11-12 14:40+00', 'send'), 'ok', 'sending resumed');
-select is(pg_temp.resume('2026-11-12 14:40+00', 'registration'), 'ok', 'registrations resumed');
+select throws_ok($$select public.admin_void_p6_usage_check((select id from ids where name = 'c13'), 'because', (pg_temp.at('2026-11-11 20:15+00') -> 'state' ->> 'version')::bigint)$$, '22023', null, 'a free-text void reason is refused');
+select is(pg_temp.flags('2026-11-11 21:05+00'), 'reg=0 tc=0 send=0 grace=0', 'sending stops 1 hour after the invalid check');
+select is((pg_temp.rec('2026-11-11 21:35+00', '2026-11-11 21:30+00') ->> 'valid')::boolean, true, 'c14 (Nov 11 21:30) valid (the voided c13 is ignored)');
+select is((pg_temp.rec('2026-11-12 21:35+00', '2026-11-12 21:30+00') ->> 'valid')::boolean, true, 'c15 (Nov 12 21:30) valid');
+select is(pg_temp.resume('2026-11-12 21:40+00', 'send'), 'ok', 'sending resumed');
+select is(pg_temp.resume('2026-11-12 21:40+00', 'registration'), 'ok', 'registrations resumed');
 
 -- ============================================================
 -- 90% stops registrations only; 95% stops sending at once
 -- ============================================================
 
-select is((pg_temp.rec('2026-11-12 15:05+00', '2026-11-12 15:00+00', pg_temp.egress('225')) ->> 'valid')::boolean, true, 'c16: egress 225 GB (90.000%) valid');
-select is(pg_temp.flags('2026-11-12 15:05+00'), 'reg=0 tc=1 send=1 grace=0', '90%: registrations stop; sending and token changes go on');
-select is(pg_temp.at('2026-11-12 15:05+00') -> 'state' ->> 'registration_stop_reason', 'usage_90', 'reason: 90%');
-select is(pg_temp.resume('2026-11-12 15:10+00', 'send'), 'not_stopped', 'sending is not stopped by 90%');
-select is((pg_temp.rec('2026-11-12 16:05+00', '2026-11-12 16:00+00', pg_temp.egress('237.4975')) ->> 'valid')::boolean, true, 'c17: egress 94.999% valid');
-select is(pg_temp.flags('2026-11-12 16:05+00'), 'reg=0 tc=1 send=1 grace=0', '94.999%: sending goes on');
-select is((pg_temp.rec('2026-11-12 17:05+00', '2026-11-12 17:00+00', pg_temp.egress('237.5')) ->> 'valid')::boolean, true, 'c18: egress 237.5 GB (95.000%) valid');
-select is(pg_temp.flags('2026-11-12 17:05+00'), 'reg=0 tc=0 send=0 grace=0', '95%: sending stops at once, no grace');
-select is(pg_temp.flags('2026-11-12 17:04:59.999999+00'), 'reg=0 tc=1 send=1 grace=0', 'just before c18 was recorded: still sending');
-select is(pg_temp.at('2026-11-12 17:05+00') -> 'state' ->> 'send_stop_reason', 'usage_95', 'send reason: 95%');
-select is(pg_temp.reasons(pg_temp.pre('2026-11-12 17:15+00', '2026-11-12 17:10+00', pg_temp.egress('0'))), 'usage_decreased', 'cumulative usage going down in the same period is invalid');
-select is(pg_temp.reasons(pg_temp.pre('2026-11-12 17:15+00', '2026-11-12 17:10+00', pg_temp.vals(jsonb_build_object('egress', '{"metric":"egress","status":"measured","value":"237.5","unit":"GB","quota":"250"}'::jsonb, 'disk_size_preview', '{"metric":"disk_size_preview","status":"measured","value":"1","unit":"GB","quota":"8"}'::jsonb)))), 'usage_decreased', 'provisioned disk going down is invalid');
-select is((pg_temp.rec('2026-11-13 17:05+00', '2026-11-13 17:00+00', pg_temp.egress('237.5')) ->> 'valid')::boolean, true, 'c19 (24 h after c18, still 95%) valid');
-select is((pg_temp.rec('2026-11-14 17:05+00', '2026-11-14 17:00+00', pg_temp.egress('237.5')) ->> 'valid')::boolean, true, 'c20 (still 95%) valid');
-select is(pg_temp.resume('2026-11-14 17:10+00', 'send'), 'usage_too_high', 'two valid checks at 95% do not resume sending');
-select is(pg_temp.resume('2026-11-14 17:10+00', 'registration'), 'usage_too_high', 'nor registrations');
-select is(pg_temp.flags('2026-11-14 17:10+00'), 'reg=0 tc=0 send=0 grace=0', 'still stopped');
+select is((pg_temp.rec('2026-11-12 22:05+00', '2026-11-12 22:00+00', pg_temp.egress('225')) ->> 'valid')::boolean, true, 'c16: egress 225 GB (90.000%) valid');
+select is(pg_temp.flags('2026-11-12 22:05+00'), 'reg=0 tc=1 send=1 grace=0', '90%: registrations stop; sending and token changes go on');
+select is(pg_temp.at('2026-11-12 22:05+00') -> 'state' ->> 'registration_stop_reason', 'usage_90', 'reason: 90%');
+select is(pg_temp.resume('2026-11-12 22:10+00', 'send'), 'not_stopped', 'sending is not stopped by 90%');
+select is((pg_temp.rec('2026-11-12 23:05+00', '2026-11-12 23:00+00', pg_temp.egress('237.4975')) ->> 'valid')::boolean, true, 'c17: egress 94.999% valid');
+select is(pg_temp.flags('2026-11-12 23:05+00'), 'reg=0 tc=1 send=1 grace=0', '94.999%: sending goes on');
+select is((pg_temp.rec('2026-11-13 00:05+00', '2026-11-13 00:00+00', pg_temp.egress('237.5')) ->> 'valid')::boolean, true, 'c18: egress 237.5 GB (95.000%) valid');
+select is(pg_temp.flags('2026-11-13 00:05+00'), 'reg=0 tc=0 send=0 grace=0', '95%: sending stops at once, no grace');
+select is(pg_temp.flags('2026-11-13 00:04:59.999999+00'), 'reg=0 tc=1 send=1 grace=0', 'just before c18 was recorded: still sending');
+select is(pg_temp.at('2026-11-13 00:05+00') -> 'state' ->> 'send_stop_reason', 'usage_95', 'send reason: 95%');
+select is(pg_temp.reasons(pg_temp.pre('2026-11-13 00:15+00', '2026-11-13 00:10+00', pg_temp.egress('0'))), 'usage_decreased', 'cumulative usage going down in the same period is invalid');
+select is(pg_temp.reasons(pg_temp.pre('2026-11-13 00:15+00', '2026-11-13 00:10+00', pg_temp.vals(jsonb_build_object('egress', '{"metric":"egress","status":"measured","value":"237.5","unit":"GB","quota":"250"}'::jsonb, 'disk_size_preview', '{"metric":"disk_size_preview","status":"measured","value":"1","unit":"GB","quota":"8"}'::jsonb)))), 'usage_decreased', 'provisioned disk going down is invalid');
+select is((pg_temp.rec('2026-11-14 00:05+00', '2026-11-14 00:00+00', pg_temp.egress('237.5')) ->> 'valid')::boolean, true, 'c19 (24 h after c18, still 95%) valid');
+select is((pg_temp.rec('2026-11-15 00:05+00', '2026-11-15 00:00+00', pg_temp.egress('237.5')) ->> 'valid')::boolean, true, 'c20 (still 95%) valid');
+select is(pg_temp.resume('2026-11-15 00:10+00', 'send'), 'usage_too_high', 'two valid checks at 95% do not resume sending');
+select is(pg_temp.resume('2026-11-15 00:10+00', 'registration'), 'usage_too_high', 'nor registrations');
+select is(pg_temp.flags('2026-11-15 00:10+00'), 'reg=0 tc=0 send=0 grace=0', 'still stopped');
 
 reset role;
 

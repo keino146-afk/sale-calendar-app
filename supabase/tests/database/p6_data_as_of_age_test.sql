@@ -1,7 +1,7 @@
 -- pgTAP tests for P6 STEP A: a data time 24 hours or more before the reading
--- (data_too_old) makes a check invalid. Everything else (29 / 30 hour
--- expiry, the 1-hour grace, 90% / 95%, P1 boundary, resume rules, gates) is
--- checked to be unchanged. One transaction, rolled back; the P6 clock is
+-- (data_too_old) makes a check invalid. Everything else (the expiry from
+-- checked_at, 36 / 37 hours since STEP B, the 1-hour grace, 90% / 95%, P1
+-- boundary, resume rules, gates) is checked to be unchanged. One transaction, rolled back; the P6 clock is
 -- replaced for this transaction only. Times are UTC.
 
 begin;
@@ -29,7 +29,7 @@ select ok(
   (select strpos(prosrc, 'private.is_admin()') > 0 and strpos(prosrc, 'private.is_admin()') < strpos(prosrc, 'p6_control') from pg_proc
    where oid = 'public.admin_record_p6_usage_check(timestamptz, date, date, text, timestamptz, jsonb, boolean, bigint, boolean)'::regprocedure),
   'record RPC: the admin check still comes before anything is read or locked');
-select ok((select strpos(prosrc, '''30 hours''') > 0 from pg_proc where oid = 'private.p6_check_expires_at(timestamptz, date)'::regprocedure), 'expiry is still 30 hours (STEP A does not change it)');
+select ok((select strpos(prosrc, '''37 hours''') > 0 from pg_proc where oid = 'private.p6_check_expires_at(timestamptz, date)'::regprocedure), 'expiry is 37 hours (STEP B; STEP A did not change it)');
 select is((select btrim(prosrc) from pg_proc where oid = 'private.push_registration_intake_open()'::regprocedure), 'select false', 'registration intake gate still only returns false');
 select is((select btrim(prosrc) from pg_proc where oid = 'private.push_token_change_open()'::regprocedure), 'select false', 'token change gate still only returns false');
 
@@ -226,15 +226,15 @@ select is(pg_temp.resume('2026-11-10 07:10+00', 'registration'), 'ok', 'registra
 select is(pg_temp.flags('2026-11-10 07:10+00'), 'reg=1 tc=1 send=1 grace=0', 'everything allowed again');
 
 -- ============================================================
--- Unchanged: 29 / 30 hour expiry from checked_at
+-- Expiry from checked_at: 36 / 37 hours (STEP B)
 -- ============================================================
 
-select is((pg_temp.at('2026-11-10 07:10+00') -> 'state' ->> 'current_check_registration_deadline')::timestamptz, '2026-11-11 12:00+00'::timestamptz, 'registration deadline: c8 read + 29 hours');
-select is((pg_temp.at('2026-11-10 07:10+00') -> 'state' ->> 'current_check_send_deadline')::timestamptz, '2026-11-11 13:00+00'::timestamptz, 'send deadline: c8 read + 30 hours');
-select is(pg_temp.flags('2026-11-11 11:59:59.999999+00'), 'reg=1 tc=1 send=1 grace=0', '29 h minus 1 us: everything allowed');
-select is(pg_temp.flags('2026-11-11 12:00+00'), 'reg=0 tc=0 send=1 grace=1', '29 h: registrations stop, sending in grace');
-select is(pg_temp.flags('2026-11-11 12:59:59.999999+00'), 'reg=0 tc=0 send=1 grace=1', '30 h minus 1 us: sending still in grace');
-select is(pg_temp.flags('2026-11-11 13:00+00'), 'reg=0 tc=0 send=0 grace=0', '30 h: sending stops');
+select is((pg_temp.at('2026-11-10 07:10+00') -> 'state' ->> 'current_check_registration_deadline')::timestamptz, '2026-11-11 19:00+00'::timestamptz, 'registration deadline: c8 read + 36 hours');
+select is((pg_temp.at('2026-11-10 07:10+00') -> 'state' ->> 'current_check_send_deadline')::timestamptz, '2026-11-11 20:00+00'::timestamptz, 'send deadline: c8 read + 37 hours');
+select is(pg_temp.flags('2026-11-11 18:59:59.999999+00'), 'reg=1 tc=1 send=1 grace=0', '36 h minus 1 us: everything allowed');
+select is(pg_temp.flags('2026-11-11 19:00+00'), 'reg=0 tc=0 send=1 grace=1', '36 h: registrations stop, sending in grace');
+select is(pg_temp.flags('2026-11-11 19:59:59.999999+00'), 'reg=0 tc=0 send=1 grace=1', '37 h minus 1 us: sending still in grace');
+select is(pg_temp.flags('2026-11-11 20:00+00'), 'reg=0 tc=0 send=0 grace=0', '37 h: sending stops');
 
 -- ============================================================
 -- Unchanged: 90% and 95% stop at once

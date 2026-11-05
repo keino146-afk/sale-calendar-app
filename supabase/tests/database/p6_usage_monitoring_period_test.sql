@@ -18,7 +18,7 @@ select plan(33);
 
 select is(private.p6_period_earliest('2026-12-02'), '2026-12-01 10:00+00'::timestamptz, 'earliest possible end of a period ending Dec 2: Dec 1 10:00 UTC');
 select is(private.p6_period_latest('2026-12-02'), '2026-12-02 12:00+00'::timestamptz, 'latest possible start of a period starting Dec 2: Dec 2 12:00 UTC');
-select is(private.p6_check_expires_at('2026-11-29 12:00+00', '2026-12-02'), '2026-11-30 18:00+00'::timestamptz, 'mid-period: a check is in force for 30 hours');
+select is(private.p6_check_expires_at('2026-11-29 12:00+00', '2026-12-02'), '2026-12-01 01:00+00'::timestamptz, 'mid-period: a check is in force for 37 hours');
 select is(private.p6_check_expires_at('2026-12-01 05:00+00', '2026-12-02'), '2026-12-01 10:00+00'::timestamptz, 'near the end: a check is in force only until the earliest period end');
 select is(private.p6_check_deadline('2026-12-01 05:00+00', '2026-12-02'), '2026-12-01 09:00+00'::timestamptz, 'near the end: registrations stop 1 hour before that');
 
@@ -115,7 +115,7 @@ select is((pg_temp.rec('2026-12-01 05:05+00', '2026-12-01 05:00+00', '2026-11-02
 -- The period end ends the check in force (P1)
 -- ============================================================
 
-select is((pg_temp.at('2026-12-01 05:10+00') -> 'state' ->> 'current_check_send_deadline')::timestamptz, '2026-12-01 10:00+00'::timestamptz, 'c3 is in force only until Dec 1 10:00, not 30 hours');
+select is((pg_temp.at('2026-12-01 05:10+00') -> 'state' ->> 'current_check_send_deadline')::timestamptz, '2026-12-01 10:00+00'::timestamptz, 'c3 is in force only until Dec 1 10:00, not 37 hours');
 select is(pg_temp.flags('2026-12-01 08:59:59.999999+00'), 'reg=1 tc=1 send=1 grace=0', '1 us before Dec 1 09:00: everything allowed');
 select is(pg_temp.flags('2026-12-01 09:00+00'), 'reg=0 tc=0 send=1 grace=1', 'Dec 1 09:00: registrations stop, sending in grace');
 select is(pg_temp.flags('2026-12-01 09:59:59.999999+00'), 'reg=0 tc=0 send=1 grace=1', '1 us before Dec 1 10:00: sending still in grace');
